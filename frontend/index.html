@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SUN SPY RECAP V2</title>
+  <meta name="description" content="SUN SPY RECAP — AI Video Recap Studio">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">S</div>
+        <div>
+          <strong>SUN SPY</strong>
+          <span>RECAP V2</span>
+        </div>
+      </div>
+
+      <nav>
+        <button class="nav-item active" data-page="studio">🎬 <span>Create Recap</span></button>
+        <button class="nav-item" data-page="dashboard">⌂ <span>Dashboard</span></button>
+        <button class="nav-item" data-page="projects">▣ <span>Projects</span></button>
+        <button class="nav-item" data-page="media">◫ <span>Media</span></button>
+        <button class="nav-item" data-page="templates">✦ <span>Templates</span></button>
+        <button class="nav-item" data-page="voices">◉ <span>Voices</span></button>
+        <button class="nav-item" data-page="subtitles">A₁ <span>Subtitles</span></button>
+        <button class="nav-item" data-page="exports">↗ <span>Exports</span></button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <button class="nav-item" data-page="settings">⚙ <span>Settings</span></button>
+        <button class="nav-item admin" data-page="admin">♛ <span>Admin</span></button>
+        <div class="usage-card">
+          <div class="usage-head"><span>Free Plan</span><b>5 / 5</b></div>
+          <div class="progress"><i style="width:100%"></i></div>
+          <small>Recap credits used</small>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu">☰</button>
+        <div>
+          <p class="eyebrow">AI VIDEO RECAP STUDIO</p>
+          <h1 id="pageTitle">Create Recap</h1>
+        </div>
+        <div class="top-actions">
+          <button class="icon-btn" title="Notifications">♢</button>
+          <div class="avatar">SS</div>
+        </div>
+      </header>
+
+      <section class="content" id="appContent">
+        <div class="hero-row">
+          <div>
+            <h2>Turn long videos into <span>short stories.</span></h2>
+            <p>Upload your video, choose your style, and prepare it for AI recap generation.</p>
+          </div>
+          <div class="status-pill"><i></i> Engine Ready</div>
+        </div>
+
+        <div class="studio-grid">
+          <section class="panel upload-panel">
+            <div class="panel-title">
+              <div><b>01</b><h3>Upload Your Video</h3></div>
+              <span>MP4 · MOV · WEBM</span>
+            </div>
+
+            <label class="dropzone" id="dropzone">
+              <input type="file" id="videoInput" accept="video/mp4,video/webm,video/quicktime,video/*">
+              <div class="upload-icon">↑</div>
+              <strong>Drop video here</strong>
+              <span>or tap to browse from your device</span>
+              <em>Maximum size will be configured by your backend.</em>
+            </label>
+
+            <div class="video-wrap hidden" id="videoWrap">
+              <video id="videoPreview" controls playsinline></video>
+              <div class="video-meta">
+                <strong id="videoName">video.mp4</strong>
+                <span id="videoInfo">Ready</span>
+                <button class="text-btn" id="removeVideo">Remove</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel settings-panel">
+            <div class="panel-title">
+              <div><b>02</b><h3>Recap Settings</h3></div>
+              <button class="reset-btn" id="resetSettings">Reset</button>
+            </div>
+
+            <div class="field-grid">
+              <label class="field"><span>Output duration</span>
+                <select id="duration">
+                  <option>30 seconds</option><option>60 seconds</option><option selected>90 seconds</option>
+                  <option>3 minutes</option><option>5 minutes</option><option>Custom</option>
+                </select>
+              </label>
+              <label class="field"><span>Recap language</span>
+                <select id="language"><option selected>Burmese</option><option>English</option></select>
+              </label>
+              <label class="field"><span>Voice</span>
+                <select id="voice"><option selected>Female — Natural</option><option>Male — Natural</option><option>Female — Cinematic</option><option>Male — Cinematic</option></select>
+              </label>
+              <label class="field"><span>Aspect ratio</span>
+                <select id="ratio"><option selected>9:16 Vertical</option><option>16:9 Landscape</option><option>1:1 Square</option><option>4:5 Portrait</option></select>
+              </label>
+              <label class="field"><span>Resolution</span>
+                <select id="resolution"><option selected>1080p</option><option>720p</option></select>
+              </label>
+              <label class="field"><span>Recap style</span>
+                <select id="style"><option selected>Cinematic Story</option><option>Fast & Viral</option><option>Documentary</option><option>Calm Narration</option><option>Custom Prompt</option></select>
+              </label>
+            </div>
+
+            <div class="feature-list">
+              <label class="toggle"><span><b>AI scene detection</b><small>Find important scenes automatically</small></span><input type="checkbox" checked><i></i></label>
+              <label class="toggle"><span><b>Best-scene selection</b><small>Prioritize key moments</small></span><input type="checkbox" checked><i></i></label>
+              <label class="toggle"><span><b>Auto subtitles</b><small>Generate timed captions</small></span><input type="checkbox" checked><i></i></label>
+            </div>
+          </section>
+        </div>
+
+        <div class="bottom-grid">
+          <section class="panel branding-panel">
+            <div class="panel-title">
+              <div><b>03</b><h3>Branding & Logo</h3></div>
+              <span>Optional</span>
+            </div>
+            <div class="branding-row">
+              <label class="logo-drop">
+                <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp">
+                <div id="logoPreview" class="logo-preview">+</div>
+                <div><strong>Upload your logo</strong><small>PNG / JPG / WEBP</small></div>
+              </label>
+              <div class="brand-controls">
+                <label class="field"><span>Position</span>
+                  <select><option>Top Right</option><option>Top Left</option><option>Bottom Right</option><option>Bottom Left</option><option>Center</option></select>
+                </label>
+                <label class="field"><span>Size</span>
+                  <select><option>Small</option><option selected>Medium</option><option>Large</option></select>
+                </label>
+                <label class="field"><span>Opacity</span>
+                  <select><option>50%</option><option>70%</option><option selected>85%</option><option>100%</option></select>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel prompt-panel">
+            <div class="panel-title"><div><b>04</b><h3>AI Instructions</h3></div><span>Optional</span></div>
+            <textarea id="prompt" placeholder="Example: Make the recap suspenseful, focus on the main character and end with a strong hook."></textarea>
+          </section>
+        </div>
+
+        <div class="generate-bar">
+          <div>
+            <strong>Ready to create</strong>
+            <span id="readyText">Upload a video to begin.</span>
+          </div>
+          <button class="generate-btn" id="generateBtn">✦ Generate AI Recap</button>
+        </div>
+
+        <section class="panel pipeline-panel">
+          <div class="panel-title"><div><b>05</b><h3>Processing Pipeline</h3></div><span id="pipelineStatus">Waiting</span></div>
+          <div class="pipeline">
+            <div class="step active"><i>1</i><span>Upload</span></div><div class="line"></div>
+            <div class="step"><i>2</i><span>Analyze</span></div><div class="line"></div>
+            <div class="step"><i>3</i><span>Recap</span></div><div class="line"></div>
+            <div class="step"><i>4</i><span>Voice</span></div><div class="line"></div>
+            <div class="step"><i>5</i><span>Subtitle</span></div><div class="line"></div>
+            <div class="step"><i>6</i><span>Render</span></div>
+          </div>
+          <p class="backend-note">Backend connection will be added in the next phase. This first build is the professional studio shell.</p>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
