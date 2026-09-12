@@ -1,13 +1,18 @@
 const API_BASE =
   "https://sun-spy-recap-v2.onrender.com";
 
-const $ = (s) =>
-  document.querySelector(s);
+/* =====================================================
+   GLOBAL STATE
+===================================================== */
+
+const $ = (selector) =>
+  document.querySelector(selector);
 
 let selectedVideo = null;
 let logoFile = null;
 let currentRecap = null;
 let finalVideoUrl = null;
+let currentJobId = null;
 
 const videoInput =
   $("#videoInput");
@@ -39,7 +44,7 @@ function showToast(message) {
   if (!toast) return;
 
   toast.textContent =
-    message;
+    String(message || "");
 
   toast.classList.add(
     "show"
@@ -91,6 +96,10 @@ function escapeHtml(value) {
 }
 
 
+/* =====================================================
+   DURATION
+===================================================== */
+
 function getDurationSeconds(
   value
 ) {
@@ -112,12 +121,16 @@ function getDurationSeconds(
           ?.value
       );
 
-    return Number.isFinite(
-      custom
-    ) &&
+    if (
+      Number.isFinite(
+        custom
+      ) &&
       custom > 0
-      ? custom
-      : 90;
+    ) {
+      return custom;
+    }
+
+    return 90;
   }
 
   const match =
@@ -125,8 +138,9 @@ function getDurationSeconds(
       /(\d+(?:\.\d+)?)/
     );
 
-  if (!match)
+  if (!match) {
     return 90;
+  }
 
   const number =
     Number(
@@ -150,11 +164,16 @@ function getDurationSeconds(
 }
 
 
+/* =====================================================
+   BACKEND URL
+===================================================== */
+
 function getBackendUrl(
   url
 ) {
-  if (!url)
+  if (!url) {
     return "";
+  }
 
   if (
     url.startsWith(
@@ -180,6 +199,32 @@ function getBackendUrl(
 
 
 /* =====================================================
+   SAFE JSON
+===================================================== */
+
+function safeJsonParse(
+  value,
+  fallback = {}
+) {
+  if (
+    typeof value ===
+    "object" &&
+    value !== null
+  ) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(
+      value
+    );
+  } catch {
+    return fallback;
+  }
+}
+
+
+/* =====================================================
    PIPELINE
 ===================================================== */
 
@@ -189,6 +234,7 @@ function updatePipeline(
 ) {
   steps.forEach(
     (step, i) => {
+
       step.classList.remove(
         "active"
       );
@@ -220,7 +266,8 @@ function updatePipeline(
   ) {
     $("#pipelineStatus")
       .textContent =
-      status;
+      status ||
+      "";
   }
 }
 
@@ -228,6 +275,7 @@ function updatePipeline(
 function finishPipeline() {
   steps.forEach(
     step => {
+
       step.classList.remove(
         "active"
       );
@@ -249,16 +297,56 @@ function finishPipeline() {
 
 
 /* =====================================================
-   VIDEO
+   VIDEO VALIDATION
 ===================================================== */
 
-function setVideo(file) {
-  if (!file)
-    return;
+function isVideoFile(
+  file
+) {
+  if (!file) {
+    return false;
+  }
 
   if (
-    !file.type.startsWith(
+    file.type &&
+    file.type.startsWith(
       "video/"
+    )
+  ) {
+    return true;
+  }
+
+  const name =
+    String(
+      file.name || ""
+    )
+      .toLowerCase();
+
+  return (
+    name.endsWith(".mp4") ||
+    name.endsWith(".mov") ||
+    name.endsWith(".mkv") ||
+    name.endsWith(".webm") ||
+    name.endsWith(".avi") ||
+    name.endsWith(".m4v")
+  );
+}
+
+
+/* =====================================================
+   SET VIDEO
+===================================================== */
+
+function setVideo(
+  file
+) {
+  if (!file) {
+    return;
+  }
+
+  if (
+    !isVideoFile(
+      file
     )
   ) {
     showToast(
@@ -328,28 +416,41 @@ function setVideo(file) {
 }
 
 
+/* =====================================================
+   FILE INPUT
+===================================================== */
+
 videoInput?.addEventListener(
   "change",
-  e => {
+  event => {
+
+    const file =
+      event.target
+        ?.files?.[0];
+
     setVideo(
-      e.target.files[0]
+      file
     );
   }
 );
 
 
-/* Drag Drop */
+/* =====================================================
+   DRAG & DROP
+===================================================== */
 
 [
   "dragenter",
   "dragover"
 ].forEach(
   eventName => {
+
     dropzone?.addEventListener(
       eventName,
-      e => {
-        e.preventDefault();
-        e.stopPropagation();
+      event => {
+
+        event.preventDefault();
+        event.stopPropagation();
 
         dropzone.classList.add(
           "dragging"
@@ -365,11 +466,13 @@ videoInput?.addEventListener(
   "drop"
 ].forEach(
   eventName => {
+
     dropzone?.addEventListener(
       eventName,
-      e => {
-        e.preventDefault();
-        e.stopPropagation();
+      event => {
+
+        event.preventDefault();
+        event.stopPropagation();
 
         dropzone.classList.remove(
           "dragging"
@@ -382,10 +485,12 @@ videoInput?.addEventListener(
 
 dropzone?.addEventListener(
   "drop",
-  e => {
+  event => {
+
     const file =
-      e.dataTransfer
-        .files[0];
+      event
+        .dataTransfer
+        ?.files?.[0];
 
     if (file) {
       setVideo(
@@ -396,18 +501,28 @@ dropzone?.addEventListener(
 );
 
 
-/* Remove */
+/* =====================================================
+   REMOVE VIDEO
+===================================================== */
 
 $("#removeVideo")
   ?.addEventListener(
     "click",
     () => {
+
       selectedVideo =
+        null;
+
+      currentRecap =
+        null;
+
+      finalVideoUrl =
         null;
 
       if (
         videoPreview
       ) {
+
         videoPreview.pause();
 
         videoPreview.removeAttribute(
@@ -453,12 +568,16 @@ $("#removeVideo")
 $("#logoInput")
   ?.addEventListener(
     "change",
-    e => {
-      const file =
-        e.target.files[0];
+    event => {
 
-      if (!file)
+      const file =
+        event
+          .target
+          ?.files?.[0];
+
+      if (!file) {
         return;
+      }
 
       const allowed = [
         "image/png",
@@ -471,6 +590,7 @@ $("#logoInput")
           file.type
         )
       ) {
+
         showToast(
           "Logo must be PNG, JPG or WEBP."
         );
@@ -489,9 +609,15 @@ $("#logoInput")
       if (
         $("#logoPreview")
       ) {
+
         $("#logoPreview")
           .innerHTML =
-          `<img src="${url}" alt="Logo preview">`;
+          `
+            <img
+              src="${escapeHtml(url)}"
+              alt="Logo preview"
+            >
+          `;
       }
 
       showToast(
@@ -502,13 +628,14 @@ $("#logoInput")
 
 
 /* =====================================================
-   RESET
+   RESET SETTINGS
 ===================================================== */
 
 $("#resetSettings")
   ?.addEventListener(
     "click",
     () => {
+
       if (
         $("#duration")
       ) {
@@ -565,6 +692,14 @@ $("#resetSettings")
           "";
       }
 
+      if (
+        $("#customDuration")
+      ) {
+        $("#customDuration")
+          .value =
+          "";
+      }
+
       showToast(
         "Settings reset."
       );
@@ -577,11 +712,13 @@ $("#resetSettings")
 ===================================================== */
 
 function getResultPanel() {
+
   let panel =
     $("#recapResult");
 
-  if (panel)
+  if (panel) {
     return panel;
+  }
 
   panel =
     document.createElement(
@@ -625,8 +762,12 @@ function getResultPanel() {
 function displayRecap(
   data
 ) {
+
   const panel =
     getResultPanel();
+
+  data =
+    data || {};
 
   const title =
     data.title ||
@@ -670,6 +811,7 @@ function displayRecap(
       ? data.characters
           .map(
             character => {
+
               if (
                 typeof character ===
                 "string"
@@ -677,7 +819,10 @@ function displayRecap(
                 return character;
               }
 
-              return `${character.name || "Unknown"} — ${character.role || ""}`;
+              return (
+                `${character.name || "Unknown"} — ` +
+                `${character.role || ""}`
+              );
             }
           )
           .join(
@@ -688,109 +833,120 @@ function displayRecap(
           ""
         );
 
-  panel.innerHTML = `
-    <div style="margin-bottom:20px;">
-      <div style="
-        font-size:12px;
-        opacity:.6;
-        text-transform:uppercase;
-      ">
-        Gemini AI Result
+  panel.innerHTML =
+    `
+      <div style="margin-bottom:20px;">
+
+        <div style="
+          font-size:12px;
+          opacity:.6;
+          text-transform:uppercase;
+        ">
+          Gemini AI Result
+        </div>
+
+        <h2 style="margin:5px 0 0;">
+          ${escapeHtml(title)}
+        </h2>
+
       </div>
 
-      <h2 style="margin:5px 0 0;">
-        ${escapeHtml(title)}
-      </h2>
-    </div>
-
-    ${
-      hook
-        ? `
-          <div style="margin-bottom:18px;">
-            <strong>Hook</strong>
-            <p>${escapeHtml(
-              hook
-            )}</p>
-          </div>
-        `
-        : ""
-    }
-
-    ${
-      summary
-        ? `
-          <div style="margin-bottom:18px;">
-            <strong>Summary</strong>
-            <p>${escapeHtml(
-              summary
-            )}</p>
-          </div>
-        `
-        : ""
-    }
-
-    ${
-      characters
-        ? `
-          <div style="margin-bottom:18px;">
-            <strong>Characters</strong>
-            <p>${escapeHtml(
-              characters
-            )}</p>
-          </div>
-        `
-        : ""
-    }
-
-    ${
-      script
-        ? `
-          <div style="margin-bottom:18px;">
-            <strong>Recap Script</strong>
-
-            <div style="
-              margin-top:8px;
-              padding:16px;
-              border-radius:12px;
-              background:rgba(0,0,0,.18);
-              white-space:pre-wrap;
-              line-height:1.7;
-            ">
-              ${escapeHtml(
-                script
-              )}
+      ${
+        hook
+          ? `
+            <div style="margin-bottom:18px;">
+              <strong>Hook</strong>
+              <p>
+                ${escapeHtml(hook)}
+              </p>
             </div>
-          </div>
-        `
-        : ""
-    }
+          `
+          : ""
+      }
 
-    ${
-      ending
-        ? `
-          <div style="margin-bottom:18px;">
-            <strong>Ending / CTA</strong>
-            <p>${escapeHtml(
-              ending
-            )}</p>
-          </div>
-        `
-        : ""
-    }
+      ${
+        summary
+          ? `
+            <div style="margin-bottom:18px;">
+              <strong>Summary</strong>
+              <p>
+                ${escapeHtml(summary)}
+              </p>
+            </div>
+          `
+          : ""
+      }
 
-    ${
-      hashtags
-        ? `
-          <div>
-            <strong>Hashtags</strong>
-            <p>${escapeHtml(
-              hashtags
-            )}</p>
-          </div>
-        `
-        : ""
-    }
-  `;
+      ${
+        characters
+          ? `
+            <div style="margin-bottom:18px;">
+              <strong>Characters</strong>
+              <p>
+                ${escapeHtml(characters)}
+              </p>
+            </div>
+          `
+          : ""
+      }
+
+      ${
+        script
+          ? `
+            <div style="margin-bottom:18px;">
+
+              <strong>
+                Recap Script
+              </strong>
+
+              <div style="
+                margin-top:8px;
+                padding:16px;
+                border-radius:12px;
+                background:rgba(0,0,0,.18);
+                white-space:pre-wrap;
+                line-height:1.7;
+              ">
+                ${escapeHtml(script)}
+              </div>
+
+            </div>
+          `
+          : ""
+      }
+
+      ${
+        ending
+          ? `
+            <div style="margin-bottom:18px;">
+              <strong>
+                Ending / CTA
+              </strong>
+
+              <p>
+                ${escapeHtml(ending)}
+              </p>
+            </div>
+          `
+          : ""
+      }
+
+      ${
+        hashtags
+          ? `
+            <div>
+              <strong>
+                Hashtags
+              </strong>
+
+              <p>
+                ${escapeHtml(hashtags)}
+              </p>
+            </div>
+          `
+          : ""
+      }
+    `;
 
   panel.scrollIntoView({
     behavior:
@@ -808,6 +964,7 @@ function displayRecap(
 function displayFinalVideo(
   url
 ) {
+
   const panel =
     getResultPanel();
 
@@ -815,6 +972,12 @@ function displayFinalVideo(
     getBackendUrl(
       url
     );
+
+  if (!finalVideoUrl) {
+    throw new Error(
+      "Final video URL is empty."
+    );
+  }
 
   panel.insertAdjacentHTML(
     "beforeend",
@@ -841,6 +1004,7 @@ function displayFinalVideo(
         <video
           controls
           playsinline
+          preload="metadata"
           style="
             width:100%;
             max-width:720px;
@@ -865,7 +1029,7 @@ function displayFinalVideo(
               finalVideoUrl
             )}"
             target="_blank"
-            rel="noopener"
+            rel="noopener noreferrer"
             style="
               display:inline-flex;
               align-items:center;
@@ -924,32 +1088,32 @@ function displayFinalVideo(
 function displayError(
   message
 ) {
+
   const panel =
     getResultPanel();
 
-  panel.innerHTML = `
-    <div style="
-      padding:18px;
-      border-radius:14px;
-      border:1px solid rgba(255,80,80,.35);
-      background:rgba(255,50,50,.08);
-    ">
-
-      <strong>
-        SUN SPY RECAP ERROR
-      </strong>
-
-      <p style="
-        margin-top:10px;
-        white-space:pre-wrap;
+  panel.innerHTML =
+    `
+      <div style="
+        padding:18px;
+        border-radius:14px;
+        border:1px solid rgba(255,80,80,.35);
+        background:rgba(255,50,50,.08);
       ">
-        ${escapeHtml(
-          message
-        )}
-      </p>
 
-    </div>
-  `;
+        <strong>
+          SUN SPY RECAP ERROR
+        </strong>
+
+        <p style="
+          margin-top:10px;
+          white-space:pre-wrap;
+        ">
+          ${escapeHtml(message)}
+        </p>
+
+      </div>
+    `;
 }
 
 
@@ -958,17 +1122,34 @@ function displayError(
 ===================================================== */
 
 async function testBackend() {
+
   const response =
     await fetch(
       `${API_BASE}/api/health`,
       {
+        method:
+          "GET",
+
         cache:
           "no-store"
       }
     );
 
-  const data =
-    await response.json();
+  const text =
+    await response.text();
+
+  let data;
+
+  try {
+    data =
+      JSON.parse(
+        text
+      );
+  } catch {
+    throw new Error(
+      `Backend health returned invalid JSON. HTTP ${response.status}`
+    );
+  }
 
   console.log(
     "SUN SPY BACKEND:",
@@ -980,6 +1161,7 @@ async function testBackend() {
     !data.ok
   ) {
     throw new Error(
+      data.error ||
       "Backend health check failed."
     );
   }
@@ -996,6 +1178,7 @@ async function postFormData(
   endpoint,
   formData
 ) {
+
   const response =
     await fetch(
       `${API_BASE}${endpoint}`,
@@ -1012,6 +1195,7 @@ async function postFormData(
     await response.text();
 
   console.log(
+    "API RESPONSE:",
     endpoint,
     response.status,
     text
@@ -1020,11 +1204,14 @@ async function postFormData(
   let data;
 
   try {
+
     data =
       JSON.parse(
         text
       );
+
   } catch {
+
     throw new Error(
       `Server returned invalid JSON. HTTP ${response.status}`
     );
@@ -1033,6 +1220,7 @@ async function postFormData(
   if (
     !response.ok
   ) {
+
     const error =
       new Error(
         data.error ||
@@ -1061,24 +1249,45 @@ async function postFormData(
 async function getJob(
   jobId
 ) {
+
   const response =
     await fetch(
       `${API_BASE}/api/jobs/${encodeURIComponent(
         jobId
       )}`,
       {
+        method:
+          "GET",
+
         cache:
           "no-store"
       }
     );
 
-  const data =
-    await response.json();
+  const text =
+    await response.text();
+
+  let data;
+
+  try {
+
+    data =
+      JSON.parse(
+        text
+      );
+
+  } catch {
+
+    throw new Error(
+      `Job status returned invalid JSON. HTTP ${response.status}`
+    );
+  }
 
   if (
     !response.ok ||
     !data.ok
   ) {
+
     throw new Error(
       data.error ||
       "Could not read job status."
@@ -1090,16 +1299,42 @@ async function getJob(
 
 
 /* =====================================================
-   POLL JOB
+   POLL RECAP JOB
 ===================================================== */
 
 async function waitForRecapJob(
   jobId
 ) {
+
   let lastMessage =
     "";
 
+  currentJobId =
+    jobId;
+
+  /*
+   * Safety timeout:
+   * 60 minutes maximum.
+   */
+  const startedAt =
+    Date.now();
+
+  const maxRuntime =
+    60 * 60 * 1000;
+
   while (true) {
+
+    if (
+      Date.now() -
+      startedAt >
+      maxRuntime
+    ) {
+
+      throw new Error(
+        "Gemini recap job timed out after 60 minutes."
+      );
+    }
+
     const job =
       await getJob(
         jobId
@@ -1119,6 +1354,7 @@ async function waitForRecapJob(
       message !==
       lastMessage
     ) {
+
       lastMessage =
         message;
 
@@ -1131,40 +1367,38 @@ async function waitForRecapJob(
       }
     }
 
+    const step =
+      String(
+        job.step ||
+        ""
+      ).toLowerCase();
+
     if (
-      job.step ===
-      "Upload"
+      step.includes(
+        "upload"
+      )
     ) {
+
       updatePipeline(
         1,
         message
       );
-    }
 
-    else if (
-      job.step ===
-      "Processing"
+    } else if (
+      step.includes(
+        "process"
+      ) ||
+      step.includes(
+        "analy"
+      ) ||
+      step.includes(
+        "gemini"
+      ) ||
+      step.includes(
+        "recap"
+      )
     ) {
-      updatePipeline(
-        2,
-        message
-      );
-    }
 
-    else if (
-      job.step ===
-      "Analyzing"
-    ) {
-      updatePipeline(
-        2,
-        message
-      );
-    }
-
-    else if (
-      job.step ===
-      "Recap"
-    ) {
       updatePipeline(
         2,
         message
@@ -1175,6 +1409,10 @@ async function waitForRecapJob(
       job.status ===
       "complete"
     ) {
+
+      currentJobId =
+        null;
+
       return job;
     }
 
@@ -1182,6 +1420,10 @@ async function waitForRecapJob(
       job.status ===
       "failed"
     ) {
+
+      currentJobId =
+        null;
+
       throw new Error(
         job.error ||
         job.message ||
@@ -1197,6 +1439,409 @@ async function waitForRecapJob(
 
 
 /* =====================================================
+   GEMINI SCENE HELPERS
+===================================================== */
+
+/*
+ * Gemini can return different property names.
+ */
+
+function normalizeSceneArray(
+  recap
+) {
+
+  if (
+    !recap ||
+    typeof recap !==
+      "object"
+  ) {
+    return [];
+  }
+
+  const candidates = [
+
+    recap.bestScenes,
+
+    recap.best_scenes,
+
+    recap.scenes,
+
+    recap.selectedScenes,
+
+    recap.selected_scenes,
+
+    recap.importantScenes,
+
+    recap.important_scenes
+  ];
+
+  for (
+    const value of
+    candidates
+  ) {
+
+    if (
+      Array.isArray(
+        value
+      ) &&
+      value.length
+    ) {
+
+      return value;
+    }
+  }
+
+  return [];
+}
+
+
+/* =====================================================
+   TIME PARSER
+===================================================== */
+
+function parseTimeToSeconds(
+  value
+) {
+
+  if (
+    typeof value ===
+    "number"
+  ) {
+
+    return Number.isFinite(
+      value
+    )
+      ? value
+      : NaN;
+  }
+
+  const text =
+    String(
+      value ?? ""
+    )
+      .trim();
+
+  if (!text) {
+    return NaN;
+  }
+
+  /*
+   * Plain seconds:
+   * 12
+   * 12.5
+   */
+
+  if (
+    /^\d+(?:\.\d+)?$/.test(
+      text
+    )
+  ) {
+
+    return Number(
+      text
+    );
+  }
+
+  /*
+   * HH:MM:SS
+   * MM:SS
+   */
+
+  const parts =
+    text
+      .split(":")
+      .map(
+        part =>
+          Number(
+            part.trim()
+          )
+      );
+
+  if (
+    parts.some(
+      Number.isNaN
+    )
+  ) {
+    return NaN;
+  }
+
+  if (
+    parts.length ===
+    2
+  ) {
+
+    return (
+      parts[0] * 60 +
+      parts[1]
+    );
+  }
+
+  if (
+    parts.length ===
+    3
+  ) {
+
+    return (
+      parts[0] * 3600 +
+      parts[1] * 60 +
+      parts[2]
+    );
+  }
+
+  return NaN;
+}
+
+
+/* =====================================================
+   SCENE START
+===================================================== */
+
+function sceneStart(
+  scene
+) {
+
+  if (
+    !scene ||
+    typeof scene !==
+      "object"
+  ) {
+    return NaN;
+  }
+
+  const value =
+
+    scene.start ??
+    scene.startTime ??
+    scene.start_time ??
+    scene.from ??
+    scene.begin ??
+    scene.startTimestamp ??
+    scene.start_timestamp;
+
+  return parseTimeToSeconds(
+    value
+  );
+}
+
+
+/* =====================================================
+   SCENE END
+===================================================== */
+
+function sceneEnd(
+  scene
+) {
+
+  if (
+    !scene ||
+    typeof scene !==
+      "object"
+  ) {
+    return NaN;
+  }
+
+  const value =
+
+    scene.end ??
+    scene.endTime ??
+    scene.end_time ??
+    scene.to ??
+    scene.finish ??
+    scene.endTimestamp ??
+    scene.end_timestamp;
+
+  return parseTimeToSeconds(
+    value
+  );
+}
+
+
+/* =====================================================
+   SCENE VALIDATION
+===================================================== */
+
+function normalizeScene(
+  scene,
+  index
+) {
+
+  if (
+    !scene ||
+    typeof scene !==
+      "object"
+  ) {
+    return null;
+  }
+
+  const start =
+    sceneStart(
+      scene
+    );
+
+  const end =
+    sceneEnd(
+      scene
+    );
+
+  if (
+    !Number.isFinite(
+      start
+    ) ||
+    !Number.isFinite(
+      end
+    ) ||
+    end <= start
+  ) {
+
+    return null;
+  }
+
+  return {
+    ...scene,
+
+    start,
+    end,
+
+    duration:
+      end - start,
+
+    sceneIndex:
+      index
+  };
+}
+
+
+/* =====================================================
+   GET VALID GEMINI SCENES
+===================================================== */
+
+function getValidGeminiScenes(
+  recap
+) {
+
+  const scenes =
+    normalizeSceneArray(
+      recap
+    );
+
+  return scenes
+    .map(
+      (
+        scene,
+        index
+      ) =>
+        normalizeScene(
+          scene,
+          index
+        )
+    )
+    .filter(
+      Boolean
+    )
+    .filter(
+      scene =>
+        scene.end >
+        scene.start
+    )
+    .sort(
+      (
+        a,
+        b
+      ) =>
+        a.start -
+        b.start
+    );
+}
+
+
+/* =====================================================
+   SCENE SUMMARY
+===================================================== */
+
+function sceneDescription(
+  scene
+) {
+
+  if (!scene) {
+    return "";
+  }
+
+  return (
+    scene.description ||
+    scene.summary ||
+    scene.reason ||
+    scene.content ||
+    scene.action ||
+    scene.visual ||
+    ""
+  );
+}
+
+
+/* =====================================================
+   CHECK GEMINI RESULT
+===================================================== */
+
+function hasUsableGeminiScenes(
+  recap
+) {
+
+  return (
+    getValidGeminiScenes(
+      recap
+    ).length >
+    0
+  );
+}
+
+
+/* =====================================================
+   BUILD RENDER DATA
+===================================================== */
+
+function buildRenderData(
+  recap
+) {
+
+  const scenes =
+    getValidGeminiScenes(
+      recap
+    );
+
+  if (
+    !scenes.length
+  ) {
+
+    throw new Error(
+      "Gemini did not return usable scene timestamps."
+    );
+  }
+
+  /*
+   * Keep the original Gemini object AND provide a
+   * normalized scene list for the backend.
+   */
+
+  return {
+    ...recap,
+
+    bestScenes:
+      scenes,
+
+    best_scenes:
+      scenes,
+
+    scenes:
+      Array.isArray(
+        recap?.scenes
+      )
+        ? recap.scenes
+        : scenes
+  };
+}
+
+
+/* =====================================================
    GENERATE RECAP
 ===================================================== */
 
@@ -1208,6 +1853,7 @@ $("#generateBtn")
       if (
         !selectedVideo
       ) {
+
         showToast(
           "Upload a video first."
         );
@@ -1226,9 +1872,28 @@ $("#generateBtn")
         button.dataset.originalText =
           button.textContent;
 
-        /* ---------------------------------------------
-           HEALTH
-        --------------------------------------------- */
+        /* =================================================
+           RESET RESULT
+        ================================================= */
+
+        const oldPanel =
+          $("#recapResult");
+
+        if (
+          oldPanel
+        ) {
+          oldPanel.remove();
+        }
+
+        finalVideoUrl =
+          null;
+
+        currentRecap =
+          null;
+
+        /* =================================================
+           STEP 0 — HEALTH
+        ================================================= */
 
         button.textContent =
           "Connecting...";
@@ -1240,18 +1905,9 @@ $("#generateBtn")
 
         await testBackend();
 
-        /* ---------------------------------------------
-           FORM DATA
-        --------------------------------------------- */
-
-        const formData =
-          new FormData();
-
-        formData.append(
-          "video",
-          selectedVideo,
-          selectedVideo.name
-        );
+        /* =================================================
+           SETTINGS
+        ================================================= */
 
         const duration =
           $("#duration")
@@ -1288,6 +1944,30 @@ $("#generateBtn")
             duration
           );
 
+        /*
+         * SUN SPY output is always Burmese.
+         */
+        const outputLanguage =
+          "Burmese";
+
+        const voiceStyle =
+          $("#voice")
+            ?.value ||
+          "Male Natural";
+
+        /* =================================================
+           STEP 1 — GEMINI ANALYSIS
+        ================================================= */
+
+        const formData =
+          new FormData();
+
+        formData.append(
+          "video",
+          selectedVideo,
+          selectedVideo.name
+        );
+
         formData.append(
           "duration",
           duration
@@ -1302,7 +1982,12 @@ $("#generateBtn")
 
         formData.append(
           "language",
-          language
+          outputLanguage
+        );
+
+        formData.append(
+          "outputLanguage",
+          outputLanguage
         );
 
         formData.append(
@@ -1325,16 +2010,31 @@ $("#generateBtn")
           instructions
         );
 
-        /* ---------------------------------------------
-           CREATE BACKGROUND JOB
-        --------------------------------------------- */
+        /*
+         * FORCE ACTUAL GEMINI VIDEO ANALYSIS.
+         */
+
+        formData.append(
+          "sceneAnalysis",
+          "true"
+        );
+
+        formData.append(
+          "bestScenes",
+          "true"
+        );
+
+        formData.append(
+          "analyzeScenes",
+          "true"
+        );
 
         button.textContent =
-          "Starting AI...";
+          "Starting Gemini...";
 
         updatePipeline(
           1,
-          "Creating AI recap job..."
+          "Creating Gemini video analysis job..."
         );
 
         const created =
@@ -1344,8 +2044,10 @@ $("#generateBtn")
           );
 
         if (
+          !created ||
           !created.jobId
         ) {
+
           throw new Error(
             "Backend did not return a Job ID."
           );
@@ -1356,35 +2058,93 @@ $("#generateBtn")
           created.jobId
         );
 
-        /* ---------------------------------------------
-           POLL
-        --------------------------------------------- */
+        /* =================================================
+           STEP 2 — POLL GEMINI
+        ================================================= */
 
         button.textContent =
-          "AI Analyzing...";
+          "Gemini Analyzing...";
 
         const completed =
           await waitForRecapJob(
             created.jobId
           );
 
-        currentRecap =
-          completed.recap;
+        /*
+         * Some backend versions may return:
+         * job.recap
+         * job.result.recap
+         * job.data.recap
+         */
 
-        displayRecap(
-          completed.recap
+        const recap =
+          completed?.recap ||
+          completed?.result?.recap ||
+          completed?.data?.recap ||
+          completed?.result ||
+          {};
+
+        currentRecap =
+          safeJsonParse(
+            recap,
+            {}
+          );
+
+        console.log(
+          "SUN SPY GEMINI RECAP:",
+          currentRecap
         );
 
-        /* ---------------------------------------------
-           FFmpeg
-        --------------------------------------------- */
+        /* =================================================
+           SHOW GEMINI RESULT
+        ================================================= */
+
+        displayRecap(
+          currentRecap
+        );
+
+        /* =================================================
+           VERIFY ACTUAL TIMESTAMPS
+        ================================================= */
+
+        const validScenes =
+          getValidGeminiScenes(
+            currentRecap
+          );
+
+        console.log(
+          "VALID GEMINI SCENES:",
+          validScenes
+        );
+
+        if (
+          !validScenes.length
+        ) {
+
+          throw new Error(
+            "Gemini completed, but no usable scene timestamps were returned. Rendering has been stopped to prevent a first-N-seconds fallback."
+          );
+        }
+
+        /*
+         * Normalize scenes before sending them to backend.
+         */
+
+        const renderRecap =
+          buildRenderData(
+            currentRecap
+          );
+
+        /* =================================================
+           STEP 3 — PREPARE RENDER
+        ================================================= */
 
         button.textContent =
-          "Rendering MP4...";
+          "Preparing scenes...";
 
         updatePipeline(
           3,
-          "FFmpeg is rendering your video..."
+          `Gemini selected ${validScenes.length} actual scene(s). Preparing FFmpeg...`
         );
 
         const processData =
@@ -1404,6 +2164,11 @@ $("#generateBtn")
         );
 
         processData.append(
+          "duration",
+          duration
+        );
+
+        processData.append(
           "aspectRatio",
           aspectRatio
         );
@@ -1413,9 +2178,186 @@ $("#generateBtn")
           resolution
         );
 
+        /* =================================================
+           FORCE BEST SCENE RENDER
+        ================================================= */
+
+        processData.append(
+          "sceneAnalysis",
+          "true"
+        );
+
+        processData.append(
+          "bestScenes",
+          "true"
+        );
+
+        processData.append(
+          "analyzeScenes",
+          "true"
+        );
+
+        processData.append(
+          "useBestScenes",
+          "true"
+        );
+
+        /* =================================================
+           COMPLETE GEMINI RESULT
+        ================================================= */
+
+        processData.append(
+          "recapData",
+          JSON.stringify(
+            renderRecap
+          )
+        );
+
+        processData.append(
+          "geminiResult",
+          JSON.stringify(
+            renderRecap
+          )
+        );
+
+        processData.append(
+          "scenes",
+          JSON.stringify(
+            validScenes
+          )
+        );
+
+        processData.append(
+          "bestScenesData",
+          JSON.stringify(
+            validScenes
+          )
+        );
+
+        /* =================================================
+           BURMESE OUTPUT
+        ================================================= */
+
+        processData.append(
+          "language",
+          outputLanguage
+        );
+
+        processData.append(
+          "outputLanguage",
+          outputLanguage
+        );
+
+        processData.append(
+          "voiceStyle",
+          voiceStyle
+        );
+
+        processData.append(
+          "voice",
+          voiceStyle
+        );
+
+        processData.append(
+          "style",
+          style
+        );
+
+        processData.append(
+          "instructions",
+          instructions
+        );
+
+        /* =================================================
+           AUDIO / SUBTITLE FLAGS
+        ================================================= */
+
+        /*
+         * These flags make the frontend intent explicit.
+         * Backend must honor them.
+         */
+
+        processData.append(
+          "removeOriginalAudio",
+          "true"
+        );
+
+        processData.append(
+          "originalAudio",
+          "false"
+        );
+
+        processData.append(
+          "generateTTS",
+          "true"
+        );
+
+        processData.append(
+          "tts",
+          "true"
+        );
+
+        processData.append(
+          "subtitles",
+          "true"
+        );
+
+        processData.append(
+          "burnSubtitles",
+          "true"
+        );
+
+        processData.append(
+          "subtitleLanguage",
+          "Burmese"
+        );
+
+        processData.append(
+          "outputFormat",
+          "mp4"
+        );
+
+        /* =================================================
+           LOGO
+        ================================================= */
+
+        if (
+          logoFile
+        ) {
+
+          processData.append(
+            "logo",
+            logoFile,
+            logoFile.name
+          );
+        }
+
+        /* =================================================
+           STEP 4 — RENDER
+        ================================================= */
+
         updatePipeline(
           4,
-          "Rendering final MP4..."
+          "Cutting Gemini-selected scenes + Burmese AI voice + subtitles..."
+        );
+
+        button.textContent =
+          "Creating Burmese AI Voice...";
+
+        console.log(
+          "PROCESS FORM:",
+          {
+            durationSeconds,
+            aspectRatio,
+            resolution,
+            language:
+              outputLanguage,
+            voiceStyle,
+            sceneCount:
+              validScenes.length,
+            scenes:
+              validScenes
+          }
         );
 
         const processed =
@@ -1424,6 +2366,52 @@ $("#generateBtn")
             processData
           );
 
+        console.log(
+          "SUN SPY PROCESS RESULT:",
+          processed
+        );
+
+        if (
+          !processed
+        ) {
+
+          throw new Error(
+            "Video processing returned an empty response."
+          );
+        }
+
+        if (
+          processed.ok ===
+            false &&
+          processed.success ===
+            false
+        ) {
+
+          throw new Error(
+            processed.error ||
+            processed.message ||
+            "Video processing failed."
+          );
+        }
+
+        if (
+          processed.error &&
+          !processed.outputUrl &&
+          !processed.videoUrl &&
+          !processed.url &&
+          !processed.file &&
+          !processed.path
+        ) {
+
+          throw new Error(
+            processed.error
+          );
+        }
+
+        /* =================================================
+           FINAL OUTPUT URL
+        ================================================= */
+
         const output =
           processed.outputUrl ||
           processed.videoUrl ||
@@ -1431,23 +2419,36 @@ $("#generateBtn")
           processed.file ||
           processed.path;
 
-        if (!output) {
+        if (
+          !output
+        ) {
+
           throw new Error(
-            "FFmpeg completed but no video URL was returned."
+            "Backend completed processing but no final video URL was returned."
           );
         }
 
-        /* ---------------------------------------------
-           COMPLETE
-        --------------------------------------------- */
+        const absoluteOutput =
+          getBackendUrl(
+            output
+          );
+
+        console.log(
+          "FINAL VIDEO:",
+          absoluteOutput
+        );
+
+        /* =================================================
+           STEP 5 — COMPLETE
+        ================================================= */
 
         updatePipeline(
           5,
-          "Export complete."
+          "Final recap ready!"
         );
 
         displayFinalVideo(
-          output
+          absoluteOutput
         );
 
         finishPipeline();
@@ -1475,6 +2476,7 @@ $("#generateBtn")
         if (
           $("#pipelineStatus")
         ) {
+
           $("#pipelineStatus")
             .textContent =
             "Failed";
@@ -1482,6 +2484,7 @@ $("#generateBtn")
 
         steps.forEach(
           step => {
+
             step.classList.remove(
               "active"
             );
@@ -1504,6 +2507,7 @@ $("#generateBtn")
         button.textContent =
           button.dataset.originalText ||
           "Generate Recap";
+
       }
     }
   );
@@ -1530,6 +2534,7 @@ document
             )
             .forEach(
               item => {
+
                 item.classList.remove(
                   "active"
                 );
@@ -1557,6 +2562,7 @@ document
             if (
               $("#pageTitle")
             ) {
+
               $("#pageTitle")
                 .textContent =
                 label;
@@ -1571,6 +2577,7 @@ document
             if (
               $("#pageTitle")
             ) {
+
               $("#pageTitle")
                 .textContent =
                 "Create Recap";
@@ -1588,13 +2595,14 @@ document
 
 
 /* =====================================================
-   MOBILE
+   MOBILE MENU
 ===================================================== */
 
 $("#mobileMenu")
   ?.addEventListener(
     "click",
     () => {
+
       $("#sidebar")
         ?.classList.toggle(
           "open"
@@ -1621,10 +2629,10 @@ document
           "Backend connection will be added in the next phase"
         )
       ) {
+
         element.textContent =
           "AI processing is ready. Upload a video to begin.";
       }
-
     }
   );
 
@@ -1642,7 +2650,31 @@ console.log(
 );
 
 console.log(
-  "Background Job System: ENABLED"
+  "Gemini Video Analysis: ENABLED"
+);
+
+console.log(
+  "Gemini Best Scene Selection: ENABLED"
+);
+
+console.log(
+  "Actual Timestamp Cutting: ENABLED"
+);
+
+console.log(
+  "Original Audio Removal: REQUESTED"
+);
+
+console.log(
+  "Burmese Gemini TTS: ENABLED"
+);
+
+console.log(
+  "Burmese Subtitle Burn-In: ENABLED"
+);
+
+console.log(
+  "9:16 Video Pipeline: ENABLED"
 );
 
 console.log(
