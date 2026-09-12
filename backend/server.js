@@ -71,39 +71,33 @@ app.use(
    MULTER
 ===================================================== */
 
-const storage =
-  multer.diskStorage({
-    destination: (_req, _file, cb) => {
-      cb(null, UPLOAD_DIR);
-    },
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, UPLOAD_DIR);
+  },
 
-    filename: (_req, file, cb) => {
-      const ext =
-        path.extname(
-          file.originalname || ".mp4"
-        );
+  filename: (_req, file, cb) => {
+    const ext = path.extname(
+      file.originalname || ".mp4"
+    );
 
-      const name =
-        Date.now() +
-        "-" +
-        crypto
-          .randomBytes(6)
-          .toString("hex") +
-        ext;
+    const name =
+      Date.now() +
+      "-" +
+      crypto.randomBytes(6).toString("hex") +
+      ext;
 
-      cb(null, name);
-    }
-  });
+    cb(null, name);
+  }
+});
 
-const upload =
-  multer({
-    storage,
+const upload = multer({
+  storage,
 
-    limits: {
-      fileSize:
-        500 * 1024 * 1024
-    }
-  });
+  limits: {
+    fileSize: 500 * 1024 * 1024
+  }
+});
 
 /* =====================================================
    JOB STORAGE
@@ -115,9 +109,7 @@ function createJob() {
   const id =
     Date.now() +
     "-" +
-    crypto
-      .randomBytes(8)
-      .toString("hex");
+    crypto.randomBytes(8).toString("hex");
 
   const job = {
     id,
@@ -128,14 +120,11 @@ function createJob() {
 
     step: "Queued",
 
-    message:
-      "Waiting to start...",
+    message: "Waiting to start...",
 
-    createdAt:
-      Date.now(),
+    createdAt: Date.now(),
 
-    updatedAt:
-      Date.now(),
+    updatedAt: Date.now(),
 
     recap: null,
 
@@ -149,27 +138,16 @@ function createJob() {
   return job;
 }
 
-function updateJob(
-  id,
-  data
-) {
-  const job =
-    jobs.get(id);
+function updateJob(id, data) {
+  const job = jobs.get(id);
 
   if (!job) return;
 
-  Object.assign(
-    job,
-    data
-  );
+  Object.assign(job, data);
 
-  job.updatedAt =
-    Date.now();
+  job.updatedAt = Date.now();
 
-  jobs.set(
-    id,
-    job
-  );
+  jobs.set(id, job);
 }
 
 /* =====================================================
@@ -177,33 +155,21 @@ function updateJob(
 ===================================================== */
 
 function sleep(ms) {
-  return new Promise(
-    (resolve) =>
-      setTimeout(
-        resolve,
-        ms
-      )
+  return new Promise((resolve) =>
+    setTimeout(resolve, ms)
   );
 }
 
-function boolValue(
-  value,
-  fallback = false
-) {
+function boolValue(value, fallback = false) {
   if (
-    value ===
-      undefined ||
-    value ===
-      null ||
+    value === undefined ||
+    value === null ||
     value === ""
   ) {
     return fallback;
   }
 
-  if (
-    typeof value ===
-    "boolean"
-  ) {
+  if (typeof value === "boolean") {
     return value;
   }
 
@@ -214,25 +180,15 @@ function boolValue(
     "on",
     "enabled"
   ].includes(
-    String(
-      value
-    ).toLowerCase()
+    String(value).toLowerCase()
   );
 }
 
-function firstValue(
-  object,
-  keys,
-  fallback
-) {
-  for (
-    const key of keys
-  ) {
+function firstValue(object, keys, fallback) {
+  for (const key of keys) {
     if (
-      object[key] !==
-        undefined &&
-      object[key] !==
-        null &&
+      object[key] !== undefined &&
+      object[key] !== null &&
       object[key] !== ""
     ) {
       return object[key];
@@ -242,61 +198,42 @@ function firstValue(
   return fallback;
 }
 
-function parseJsonMaybe(
-  value,
-  fallback = null
-) {
+function parseJsonMaybe(value, fallback = null) {
   if (
-    value ===
-      undefined ||
-    value ===
-      null ||
+    value === undefined ||
+    value === null ||
     value === ""
   ) {
     return fallback;
   }
 
-  if (
-    typeof value ===
-    "object"
-  ) {
+  if (typeof value === "object") {
     return value;
   }
 
   try {
-    return JSON.parse(
-      value
-    );
+    return JSON.parse(value);
   } catch {
     return fallback;
   }
 }
 
-function getPublicBaseUrl(
-  req
-) {
+function getPublicBaseUrl(req) {
   const configured =
     process.env.PUBLIC_BASE_URL ||
     process.env.RENDER_EXTERNAL_URL;
 
   if (configured) {
-    return configured.replace(
-      /\/+$/,
-      ""
-    );
+    return configured.replace(/\/+$/, "");
   }
 
   const protocol =
-    req.headers[
-      "x-forwarded-proto"
-    ] ||
+    req.headers["x-forwarded-proto"] ||
     req.protocol ||
     "http";
 
   const host =
-    req.headers[
-      "x-forwarded-host"
-    ] ||
+    req.headers["x-forwarded-host"] ||
     req.get("host");
 
   return `${protocol}://${host}`;
@@ -306,116 +243,77 @@ function getPublicBaseUrl(
    COMMAND RUNNER
 ===================================================== */
 
-function runCommand(
-  command,
-  args,
-  options = {}
-) {
-  return new Promise(
-    (resolve, reject) => {
-      const child =
-        spawn(
-          command,
-          args,
-          {
-            ...options,
+function runCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      ...options,
 
-            stdio: [
-              "ignore",
-              "pipe",
-              "pipe"
-            ]
-          }
-        );
+      stdio: [
+        "ignore",
+        "pipe",
+        "pipe"
+      ]
+    });
 
-      let stdout = "";
-      let stderr = "";
+    let stdout = "";
+    let stderr = "";
 
-      child.stdout.on(
-        "data",
-        (data) => {
-          stdout +=
-            data.toString();
-        }
+    child.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    child.on("error", reject);
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({
+          stdout,
+          stderr
+        });
+
+        return;
+      }
+
+      const error = new Error(
+        `Command failed with code ${code}`
       );
 
-      child.stderr.on(
-        "data",
-        (data) => {
-          stderr +=
-            data.toString();
-        }
-      );
+      error.code = code;
+      error.stdout = stdout;
+      error.stderr = stderr;
 
-      child.on(
-        "error",
-        reject
-      );
-
-      child.on(
-        "close",
-        (code) => {
-          if (
-            code === 0
-          ) {
-            resolve({
-              stdout,
-              stderr
-            });
-
-            return;
-          }
-
-          const error =
-            new Error(
-              `Command failed with code ${code}`
-            );
-
-          error.code =
-            code;
-
-          error.stdout =
-            stdout;
-
-          error.stderr =
-            stderr;
-
-          reject(
-            error
-          );
-        }
-      );
-    }
-  );
+      reject(error);
+    });
+  });
 }
 
 /* =====================================================
    VIDEO DURATION
 ===================================================== */
 
-async function getVideoDuration(
-  input
-) {
-  const result =
-    await runCommand(
-      ffmpegPath,
-      [
-        "-hide_banner",
-        "-i",
-        input,
-        "-f",
-        "null",
-        "-"
-      ]
-    );
+async function getVideoDuration(input) {
+  const result = await runCommand(
+    ffmpegPath,
+    [
+      "-hide_banner",
+      "-i",
+      input,
+      "-f",
+      "null",
+      "-"
+    ]
+  );
 
   const output =
     `${result.stdout}\n${result.stderr}`;
 
-  const match =
-    output.match(
-      /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/i
-    );
+  const match = output.match(
+    /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/i
+  );
 
   if (!match) {
     throw new Error(
@@ -424,17 +322,9 @@ async function getVideoDuration(
   }
 
   return (
-    Number(
-      match[1]
-    ) *
-      3600 +
-    Number(
-      match[2]
-    ) *
-      60 +
-    Number(
-      match[3]
-    )
+    Number(match[1]) * 3600 +
+    Number(match[2]) * 60 +
+    Number(match[3])
   );
 }
 
@@ -442,12 +332,8 @@ async function getVideoDuration(
    VIDEO FILTER
 ===================================================== */
 
-function getVideoFilter(
-  aspectRatio
-) {
-  switch (
-    aspectRatio
-  ) {
+function getVideoFilter(aspectRatio) {
+  switch (aspectRatio) {
     case "16:9":
       return [
         "crop=min(iw\\,ih*16/9):min(ih\\,iw*9/16)",
@@ -479,41 +365,28 @@ function getVideoFilter(
    GEMINI ERROR
 ===================================================== */
 
-function getGeminiStatus(
-  error
-) {
+function getGeminiStatus(error) {
   if (!error) {
     return null;
   }
 
-  if (
-    error.status
-  ) {
-    return Number(
-      error.status
-    );
+  if (error.status) {
+    return Number(error.status);
   }
 
   const message =
-    String(
-      error.message || ""
-    );
+    String(error.message || "");
 
-  const match =
-    message.match(
-      /\b(400|401|403|404|408|409|429|500|502|503|504)\b/
-    );
+  const match = message.match(
+    /\b(400|401|403|404|408|409|429|500|502|503|504)\b/
+  );
 
   return match
-    ? Number(
-        match[1]
-      )
+    ? Number(match[1])
     : null;
 }
 
-function isRetryableGeminiError(
-  error
-) {
+function isRetryableGeminiError(error) {
   return [
     408,
     429,
@@ -522,84 +395,56 @@ function isRetryableGeminiError(
     503,
     504
   ].includes(
-    getGeminiStatus(
-      error
-    )
+    getGeminiStatus(error)
   );
 }
 
-function extractGeminiError(
-  data
-) {
+function extractGeminiError(data) {
   if (!data) {
     return "Unknown Gemini error";
   }
 
-  if (
-    typeof data ===
-    "string"
-  ) {
+  if (typeof data === "string") {
     return data;
   }
 
   if (data.error) {
     return (
       data.error.message ||
-      JSON.stringify(
-        data.error
-      )
+      JSON.stringify(data.error)
     );
   }
 
-  return JSON.stringify(
-    data
-  );
+  return JSON.stringify(data);
 }
 
 /* =====================================================
    GEMINI REQUEST
 ===================================================== */
 
-async function geminiRequest(
-  url,
-  options = {}
-) {
-  const response =
-    await fetch(
-      url,
-      options
-    );
+async function geminiRequest(url, options = {}) {
+  const response = await fetch(
+    url,
+    options
+  );
 
-  const text =
-    await response.text();
+  const text = await response.text();
 
   let data;
 
   try {
-    data =
-      JSON.parse(
-        text
-      );
+    data = JSON.parse(text);
   } catch {
-    data =
-      text;
+    data = text;
   }
 
-  if (
-    !response.ok
-  ) {
-    const error =
-      new Error(
-        extractGeminiError(
-          data
-        )
-      );
+  if (!response.ok) {
+    const error = new Error(
+      extractGeminiError(data)
+    );
 
-    error.status =
-      response.status;
-
-    error.data =
-      data;
+    error.status = response.status;
+    error.data = data;
 
     throw error;
   }
@@ -615,18 +460,14 @@ async function uploadGeminiFile(
   filePath,
   mimeType
 ) {
-  if (
-    !GEMINI_API_KEY
-  ) {
+  if (!GEMINI_API_KEY) {
     throw new Error(
       "GEMINI_API_KEY is not configured."
     );
   }
 
   const fileBuffer =
-    fs.readFileSync(
-      filePath
-    );
+    fs.readFileSync(filePath);
 
   const uploadUrl =
     "https://generativelanguage.googleapis.com/upload/v1beta/files?key=" +
@@ -634,29 +475,25 @@ async function uploadGeminiFile(
       GEMINI_API_KEY
     );
 
-  const response =
-    await fetch(
-      uploadUrl,
-      {
-        method:
-          "POST",
+  const response = await fetch(
+    uploadUrl,
+    {
+      method: "POST",
 
-        headers: {
-          "Content-Type":
-            mimeType ||
-            "video/mp4",
+      headers: {
+        "Content-Type":
+          mimeType || "video/mp4",
 
-          "X-Goog-Upload-Protocol":
-            "raw",
+        "X-Goog-Upload-Protocol":
+          "raw",
 
-          "X-Goog-Upload-Command":
-            "start, upload, finalize"
-        },
+        "X-Goog-Upload-Command":
+          "start, upload, finalize"
+      },
 
-        body:
-          fileBuffer
-      }
-    );
+      body: fileBuffer
+    }
+  );
 
   const text =
     await response.text();
@@ -664,23 +501,17 @@ async function uploadGeminiFile(
   let data;
 
   try {
-    data =
-      JSON.parse(
-        text
-      );
+    data = JSON.parse(text);
   } catch {
     data = null;
   }
 
-  if (
-    !response.ok
-  ) {
-    const error =
-      new Error(
-        `Gemini file upload failed: ${extractGeminiError(
-          data || text
-        )}`
-      );
+  if (!response.ok) {
+    const error = new Error(
+      `Gemini file upload failed: ${extractGeminiError(
+        data || text
+      )}`
+    );
 
     error.status =
       response.status;
@@ -688,10 +519,7 @@ async function uploadGeminiFile(
     throw error;
   }
 
-  return (
-    data.file ||
-    data
-  );
+  return data.file || data;
 }
 
 /* =====================================================
@@ -714,44 +542,32 @@ async function waitForGeminiFile(
       );
 
     const data =
-      await geminiRequest(
-        url
-      );
+      await geminiRequest(url);
 
     const state =
       data?.state ||
       data?.file?.state ||
       "ACTIVE";
 
-    if (
-      state ===
-      "ACTIVE"
-    ) {
+    if (state === "ACTIVE") {
       updateJob(
         jobId,
         {
-          progress:
-            35,
+          progress: 35,
 
-          step:
-            "Analyzing",
+          step: "Analyzing",
 
           message:
             "Gemini is analyzing the actual video..."
         }
       );
 
-      return (
-        data.file ||
-        data
-      );
+      return data.file || data;
     }
 
     if (
-      state ===
-        "FAILED" ||
-      state ===
-        "ERROR"
+      state === "FAILED" ||
+      state === "ERROR"
     ) {
       throw new Error(
         `Gemini file processing failed: ${JSON.stringify(
@@ -763,27 +579,22 @@ async function waitForGeminiFile(
     updateJob(
       jobId,
       {
-        progress:
-          Math.min(
-            34,
-            10 +
-              Math.floor(
-                attempt /
-                  3
-              )
-          ),
+        progress: Math.min(
+          34,
+          10 +
+            Math.floor(
+              attempt / 3
+            )
+        ),
 
-        step:
-          "Processing",
+        step: "Processing",
 
         message:
           "Gemini is processing the uploaded video..."
       }
     );
 
-    await sleep(
-      2000
-    );
+    await sleep(2000);
   }
 
   throw new Error(
@@ -795,35 +606,25 @@ async function waitForGeminiFile(
    GEMINI TEXT
 ===================================================== */
 
-function extractGeminiText(
-  data
-) {
+function extractGeminiText(data) {
   const text =
     data?.candidates?.[0]
       ?.content?.parts
       ?.map(
         (part) =>
-          part.text ||
-          ""
+          part.text || ""
       )
-      .join("") ||
-    "";
+      .join("") || "";
 
   return text.trim();
 }
 
-function cleanJsonText(
-  text
-) {
+function cleanJsonText(text) {
   let cleaned =
-    String(
-      text || ""
-    ).trim();
+    String(text || "").trim();
 
   if (
-    cleaned.startsWith(
-      "```"
-    )
+    cleaned.startsWith("```")
   ) {
     cleaned =
       cleaned
@@ -843,20 +644,14 @@ function cleanJsonText(
   }
 
   const firstBrace =
-    cleaned.indexOf(
-      "{"
-    );
+    cleaned.indexOf("{");
 
   const lastBrace =
-    cleaned.lastIndexOf(
-      "}"
-    );
+    cleaned.lastIndexOf("}");
 
   if (
-    firstBrace !==
-      -1 &&
-    lastBrace >
-      firstBrace
+    firstBrace !== -1 &&
+    lastBrace > firstBrace
   ) {
     cleaned =
       cleaned.slice(
@@ -868,14 +663,10 @@ function cleanJsonText(
   return cleaned;
 }
 
-function parseGeminiJson(
-  text
-) {
+function parseGeminiJson(text) {
   try {
     return JSON.parse(
-      cleanJsonText(
-        text
-      )
+      cleanJsonText(text)
     );
   } catch {
     throw new Error(
@@ -898,8 +689,7 @@ function buildRecapPrompt({
   recapEnabled
 }) {
   const targetLanguage =
-    language ===
-    "English"
+    language === "English"
       ? "English"
       : "Burmese";
 
@@ -1067,9 +857,8 @@ async function generateGeminiRecap({
   ].filter(
     (model, index, array) =>
       model &&
-      array.indexOf(
-        model
-      ) === index
+      array.indexOf(model) ===
+        index
   );
 
   const prompt =
@@ -1083,8 +872,7 @@ async function generateGeminiRecap({
       recapEnabled
     });
 
-  let lastError =
-    null;
+  let lastError = null;
 
   for (
     const model of models
@@ -1098,11 +886,9 @@ async function generateGeminiRecap({
         updateJob(
           jobId,
           {
-            progress:
-              45,
+            progress: 45,
 
-            step:
-              "Recap",
+            step: "Recap",
 
             message:
               "Gemini is analyzing scenes and generating the recap..."
@@ -1123,55 +909,44 @@ async function generateGeminiRecap({
           await geminiRequest(
             url,
             {
-              method:
-                "POST",
+              method: "POST",
 
               headers: {
                 "Content-Type":
                   "application/json"
               },
 
-              body:
-                JSON.stringify(
+              body: JSON.stringify({
+                contents: [
                   {
-                    contents:
-                      [
-                        {
-                          role:
-                            "user",
+                    role: "user",
 
-                          parts:
-                            [
-                              {
-                                text:
-                                  prompt
-                              },
-
-                              {
-                                file_data:
-                                  {
-                                    mime_type:
-                                      mimeType ||
-                                      "video/mp4",
-
-                                    file_uri:
-                                      fileUri
-                                  }
-                              }
-                            ]
-                        }
-                      ],
-
-                    generationConfig:
+                    parts: [
                       {
-                        temperature:
-                          0.55,
+                        text: prompt
+                      },
 
-                        responseMimeType:
-                          "application/json"
+                      {
+                        file_data: {
+                          mime_type:
+                            mimeType ||
+                            "video/mp4",
+
+                          file_uri:
+                            fileUri
+                        }
                       }
+                    ]
                   }
-                )
+                ],
+
+                generationConfig: {
+                  temperature: 0.55,
+
+                  responseMimeType:
+                    "application/json"
+                }
+              })
             }
           );
 
@@ -1194,11 +969,9 @@ async function generateGeminiRecap({
         updateJob(
           jobId,
           {
-            progress:
-              60,
+            progress: 60,
 
-            step:
-              "Recap",
+            step: "Recap",
 
             message:
               "Gemini scene analysis completed."
@@ -1208,14 +981,10 @@ async function generateGeminiRecap({
         return {
           recap,
           model,
-          attempts:
-            attempt
+          attempts: attempt
         };
-      } catch (
-        error
-      ) {
-        lastError =
-          error;
+      } catch (error) {
+        lastError = error;
 
         console.error(
           "Gemini error:",
@@ -1230,16 +999,12 @@ async function generateGeminiRecap({
           break;
         }
 
-        if (
-          attempt <
-          3
-        ) {
+        if (attempt < 3) {
           await sleep(
             2000 *
               Math.pow(
                 2,
-                attempt -
-                  1
+                attempt - 1
               )
           );
         }
@@ -1247,21 +1012,19 @@ async function generateGeminiRecap({
     }
   }
 
-  const error =
-    new Error(
-      `Gemini generation failed: ${
-        lastError?.message ||
-        "Unknown error"
-      }`
-    );
+  const error = new Error(
+    `Gemini generation failed: ${
+      lastError?.message ||
+      "Unknown error"
+    }`
+  );
 
   error.status =
     getGeminiStatus(
       lastError
     ) || 503;
 
-  error.retryable =
-    true;
+  error.retryable = true;
 
   throw error;
 }
@@ -1281,14 +1044,11 @@ async function processRecapJob(
     updateJob(
       job.id,
       {
-        status:
-          "processing",
+        status: "processing",
 
-        progress:
-          5,
+        progress: 5,
 
-        step:
-          "Upload",
+        step: "Upload",
 
         message:
           "Uploading video to Gemini..."
@@ -1320,11 +1080,9 @@ async function processRecapJob(
     updateJob(
       job.id,
       {
-        progress:
-          20,
+        progress: 20,
 
-        step:
-          "Processing",
+        step: "Processing",
 
         message:
           "Gemini received the video."
@@ -1342,51 +1100,46 @@ async function processRecapJob(
       fileUri;
 
     const result =
-      await generateGeminiRecap(
-        {
-          fileUri:
-            activeFileUri,
+      await generateGeminiRecap({
+        fileUri:
+          activeFileUri,
 
-          mimeType:
-            options.mimeType,
+        mimeType:
+          options.mimeType,
 
-          language:
-            options.language,
+        language:
+          options.language,
 
-          durationSeconds:
-            options.durationSeconds,
+        durationSeconds:
+          options.durationSeconds,
 
-          style:
-            options.style,
+        style:
+          options.style,
 
-          instructions:
-            options.instructions,
+        instructions:
+          options.instructions,
 
-          jobId:
-            job.id,
+        jobId:
+          job.id,
 
-          sceneAnalysisEnabled:
-            options.sceneAnalysisEnabled,
+        sceneAnalysisEnabled:
+          options.sceneAnalysisEnabled,
 
-          bestScenesEnabled:
-            options.bestScenesEnabled,
+        bestScenesEnabled:
+          options.bestScenesEnabled,
 
-          recapEnabled:
-            options.recapEnabled
-        }
-      );
+        recapEnabled:
+          options.recapEnabled
+      });
 
     updateJob(
       job.id,
       {
-        status:
-          "complete",
+        status: "complete",
 
-        progress:
-          100,
+        progress: 100,
 
-        step:
-          "Complete",
+        step: "Complete",
 
         message:
           "AI scene analysis and recap completed.",
@@ -1410,9 +1163,7 @@ async function processRecapJob(
           options.recapEnabled
       }
     );
-  } catch (
-    error
-  ) {
+  } catch (error) {
     console.error(
       "BACKGROUND RECAP ERROR:",
       error
@@ -1421,14 +1172,11 @@ async function processRecapJob(
     updateJob(
       job.id,
       {
-        status:
-          "failed",
+        status: "failed",
 
-        progress:
-          100,
+        progress: 100,
 
-        step:
-          "Failed",
+        step: "Failed",
 
         message:
           error.message ||
@@ -1439,16 +1187,13 @@ async function processRecapJob(
           "Unknown error",
 
         retryable:
-          error.retryable ===
-          true
+          error.retryable === true
       }
     );
   } finally {
     if (
       localFile &&
-      fs.existsSync(
-        localFile
-      )
+      fs.existsSync(localFile)
     ) {
       try {
         fs.unlinkSync(
@@ -1491,8 +1236,7 @@ function normalizeScene(
           "end_seconds",
           "endSeconds"
         ],
-        start +
-          3
+        start + 3
       )
     );
 
@@ -1500,8 +1244,7 @@ function normalizeScene(
     order:
       Number(
         scene.order ||
-          index +
-            1
+          index + 1
       ),
 
     start:
@@ -1512,8 +1255,7 @@ function normalizeScene(
 
     end:
       Math.max(
-        start +
-          0.25,
+        start + 0.25,
         end
       ),
 
@@ -1550,15 +1292,11 @@ function selectBestScenes(
 ) {
   const normalized =
     (
-      Array.isArray(
-        scenes
-      )
+      Array.isArray(scenes)
         ? scenes
         : []
     )
-      .map(
-        normalizeScene
-      )
+      .map(normalizeScene)
       .filter(
         (scene) =>
           scene.end >
@@ -1591,15 +1329,12 @@ function selectBestScenes(
     return [];
   }
 
-  const selected =
-    [];
+  const selected = [];
 
-  let total =
-    0;
+  let total = 0;
 
   for (
-    const scene of
-      normalized
+    const scene of normalized
   ) {
     if (
       total >=
@@ -1625,8 +1360,7 @@ function selectBestScenes(
 
     if (
       sceneDuration <=
-      remaining +
-        0.5
+      remaining + 0.5
     ) {
       selected.push(
         scene
@@ -1635,8 +1369,7 @@ function selectBestScenes(
       total +=
         sceneDuration;
     } else if (
-      remaining >=
-      0.8
+      remaining >= 0.8
     ) {
       selected.push({
         ...scene,
@@ -1680,8 +1413,7 @@ function buildTrimArgs(
   resolution
 ) {
   const height =
-    resolution ===
-    "720p"
+    resolution === "720p"
       ? 720
       : 1080;
 
@@ -1699,9 +1431,7 @@ function buildTrimArgs(
     inputFile,
 
     "-t",
-    String(
-      duration
-    ),
+    String(duration),
 
     "-map",
     "0:v:0",
@@ -1753,25 +1483,20 @@ async function renderBestScenes({
   resolution,
   targetDuration
 }) {
-  if (
-    !scenes.length
-  ) {
+  if (!scenes.length) {
     throw new Error(
       "No usable best scenes were returned by Gemini."
     );
   }
 
-  const clipFiles =
-    [];
+  const clipFiles = [];
 
-  let concatFile =
-    null;
+  let concatFile = null;
 
   try {
     for (
       let i = 0;
-      i <
-      scenes.length;
+      i < scenes.length;
       i++
     ) {
       const scene =
@@ -1780,7 +1505,10 @@ async function renderBestScenes({
       const clipFile =
         path.join(
           TEMP_DIR,
-          `${Date.now()}-${crypto.randomBytes(5).toString("hex")}-${i}.mp4`
+
+          `${Date.now()}-${crypto
+            .randomBytes(5)
+            .toString("hex")}-${i}.mp4`
         );
 
       const duration =
@@ -1832,8 +1560,7 @@ async function renderBestScenes({
         ) &&
         fs.statSync(
           clipFile
-        ).size >
-          0
+        ).size > 0
       ) {
         clipFiles.push(
           clipFile
@@ -1852,11 +1579,15 @@ async function renderBestScenes({
     concatFile =
       path.join(
         TEMP_DIR,
-        `${Date.now()}-${crypto.randomBytes(5).toString("hex")}-concat.txt`
+
+        `${Date.now()}-${crypto
+          .randomBytes(5)
+          .toString("hex")}-concat.txt`
       );
 
     fs.writeFileSync(
       concatFile,
+
       clipFiles
         .map(
           (file) =>
@@ -1865,15 +1596,13 @@ async function renderBestScenes({
               "'\\''"
             )}'`
         )
-        .join(
-          "\n"
-        ),
+        .join("\n"),
+
       "utf8"
     );
 
     const height =
-      resolution ===
-      "720p"
+      resolution === "720p"
         ? 720
         : 1080;
 
@@ -1942,13 +1671,10 @@ async function renderBestScenes({
     );
   } finally {
     for (
-      const file of
-        clipFiles
+      const file of clipFiles
     ) {
       try {
-        fs.unlinkSync(
-          file
-        );
+        fs.unlinkSync(file);
       } catch {}
     }
 
@@ -1987,9 +1713,7 @@ app.get(
         "Backend is online.",
 
       ffmpeg:
-        Boolean(
-          ffmpegPath
-        ),
+        Boolean(ffmpegPath),
 
       geminiConfigured:
         Boolean(
@@ -2002,11 +1726,9 @@ app.get(
       fallbackModel:
         GEMINI_FALLBACK_MODEL,
 
-      outputServing:
-        true,
+      outputServing: true,
 
-      sceneAnalysis:
-        true,
+      sceneAnalysis: true,
 
       bestSceneSelection:
         true,
@@ -2037,9 +1759,7 @@ app.get(
         "Backend is online.",
 
       ffmpeg:
-        Boolean(
-          ffmpegPath
-        ),
+        Boolean(ffmpegPath),
 
       geminiConfigured:
         Boolean(
@@ -2052,11 +1772,9 @@ app.get(
       fallbackModel:
         GEMINI_FALLBACK_MODEL,
 
-      outputServing:
-        true,
+      outputServing: true,
 
-      sceneAnalysis:
-        true,
+      sceneAnalysis: true,
 
       bestSceneSelection:
         true,
@@ -2073,22 +1791,15 @@ app.get(
 
 app.post(
   "/api/recap",
-  upload.single(
-    "video"
-  ),
+  upload.single("video"),
 
-  async (
-    req,
-    res
-  ) => {
+  async (req, res) => {
     try {
       if (
         !GEMINI_API_KEY
       ) {
         return res
-          .status(
-            500
-          )
+          .status(500)
           .json({
             ok: false,
 
@@ -2097,13 +1808,9 @@ app.post(
           });
       }
 
-      if (
-        !req.file
-      ) {
+      if (!req.file) {
         return res
-          .status(
-            400
-          )
+          .status(400)
           .json({
             ok: false,
 
@@ -2256,8 +1963,7 @@ app.post(
       return res.json({
         ok: true,
 
-        success:
-          true,
+        success: true,
 
         jobId:
           job.id,
@@ -2276,18 +1982,14 @@ app.post(
           recapEnabled
         }
       });
-    } catch (
-      error
-    ) {
+    } catch (error) {
       console.error(
         "CREATE RECAP ERROR:",
         error
       );
 
       return res
-        .status(
-          500
-        )
+        .status(500)
         .json({
           ok: false,
 
@@ -2305,10 +2007,7 @@ app.post(
 
 app.get(
   "/api/jobs/:id",
-  (
-    req,
-    res
-  ) => {
+  (req, res) => {
     const job =
       jobs.get(
         req.params.id
@@ -2316,9 +2015,7 @@ app.get(
 
     if (!job) {
       return res
-        .status(
-          404
-        )
+        .status(404)
         .json({
           ok: false,
 
@@ -2327,7 +2024,7 @@ app.get(
         });
     }
 
-    res.json({
+    return res.json({
       ok: true,
 
       job
@@ -2341,28 +2038,16 @@ app.get(
 
 app.post(
   "/api/process-video",
-  upload.single(
-    "video"
-  ),
+  upload.single("video"),
 
-  async (
-    req,
-    res
-  ) => {
-    let inputFile =
-      null;
-
-    let outputFile =
-      null;
+  async (req, res) => {
+    let inputFile = null;
+    let outputFile = null;
 
     try {
-      if (
-        !req.file
-      ) {
+      if (!req.file) {
         return res
-          .status(
-            400
-          )
+          .status(400)
           .json({
             ok: false,
 
@@ -2396,14 +2081,18 @@ app.post(
       const aspectRatio =
         firstValue(
           req.body,
+
           ["aspectRatio"],
+
           "9:16"
         );
 
       const resolution =
         firstValue(
           req.body,
+
           ["resolution"],
+
           "1080p"
         );
 
@@ -2477,12 +2166,8 @@ app.post(
         Date.now() +
         "-" +
         crypto
-          .randomBytes(
-            5
-          )
-          .toString(
-            "hex"
-          );
+          .randomBytes(5)
+          .toString("hex");
 
       outputFile =
         path.join(
@@ -2491,8 +2176,7 @@ app.post(
           `${id}.mp4`
         );
 
-      let selectedScenes =
-        [];
+      let selectedScenes = [];
 
       /*
        * BEST SCENE MODE
@@ -2586,8 +2270,7 @@ app.post(
         );
 
       if (
-                stat.size <=
-          0
+        stat.size <= 0
       ) {
         throw new Error(
           "FFmpeg output file is empty."
@@ -2612,8 +2295,7 @@ app.post(
       return res.json({
         ok: true,
 
-        success:
-          true,
+        success: true,
 
         message:
           "Video processing completed.",
@@ -2650,23 +2332,18 @@ app.post(
         recap:
           recapData || null
       });
-    } catch (
-      error
-    ) {
+    } catch (error) {
       console.error(
         "PROCESS VIDEO ERROR:",
         error
       );
 
       return res
-        .status(
-          500
-        )
+        .status(500)
         .json({
           ok: false,
 
-          success:
-            false,
+          success: false,
 
           error:
             error.message ||
@@ -2711,10 +2388,7 @@ app.post(
 
 app.get(
   "/api/outputs/:filename",
-  (
-    req,
-    res
-  ) => {
+  (req, res) => {
     const filename =
       path.basename(
         req.params.filename
@@ -2732,9 +2406,7 @@ app.get(
       )
     ) {
       return res
-        .status(
-          404
-        )
+        .status(404)
         .json({
           ok: false,
 
@@ -2755,10 +2427,7 @@ app.get(
 
 app.get(
   "/outputs/:filename",
-  (
-    req,
-    res
-  ) => {
+  (req, res) => {
     const filename =
       path.basename(
         req.params.filename
@@ -2776,9 +2445,7 @@ app.get(
       )
     ) {
       return res
-        .status(
-          404
-        )
+        .status(404)
         .send(
           "Output file not found."
         );
@@ -2805,14 +2472,9 @@ app.get(
 ===================================================== */
 
 app.use(
-  (
-    req,
-    res
-  ) => {
-    res
-      .status(
-        404
-      )
+  (req, res) => {
+    return res
+      .status(404)
       .json({
         ok: false,
 
@@ -2846,9 +2508,7 @@ app.use(
       multer.MulterError
     ) {
       return res
-        .status(
-          400
-        )
+        .status(400)
         .json({
           ok: false,
 
@@ -2859,9 +2519,7 @@ app.use(
     }
 
     return res
-      .status(
-        500
-      )
+      .status(500)
       .json({
         ok: false,
 
@@ -2950,9 +2608,7 @@ function cleanupOldFiles() {
 
 setInterval(
   cleanupOldFiles,
-  60 *
-    60 *
-    1000
+  60 * 60 * 1000
 );
 
 cleanupOldFiles();
@@ -3027,6 +2683,10 @@ app.listen(
   }
 );
 
+/* =====================================================
+   SHUTDOWN
+===================================================== */
+
 process.on(
   "SIGTERM",
   () => {
@@ -3034,9 +2694,7 @@ process.on(
       "SIGTERM received. Shutting down..."
     );
 
-    process.exit(
-      0
-    );
+    process.exit(0);
   }
 );
 
@@ -3047,8 +2705,6 @@ process.on(
       "SIGINT received. Shutting down..."
     );
 
-    process.exit(
-      0
-    );
+    process.exit(0);
   }
 );
