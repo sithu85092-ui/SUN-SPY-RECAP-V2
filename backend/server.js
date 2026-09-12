@@ -13,755 +13,494 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = Number(process.env.PORT || 8787);
+const PORT = process.env.PORT || 10000;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
-const API_KEY = process.env.GEMINI_API_KEY;
+const uploadsDir = path.join(__dirname, "uploads");
+const outputsDir = path.join(__dirname, "outputs");
 
-const MODEL =
-  process.env.GEMINI_MODEL ||
-  "gemini-3.6-flash";
-
-const MAX_MB =
-  Number(process.env.MAX_UPLOAD_MB || 200);
-
-const uploadDir =
-  path.join(__dirname, "uploads");
-
-const outputDir =
-  path.join(__dirname, "outputs");
-
-fs.mkdirSync(uploadDir, {
-  recursive: true
-});
-
-fs.mkdirSync(outputDir, {
-  recursive: true
-});
+fs.mkdirSync(uploadsDir, { recursive: true });
+fs.mkdirSync(outputsDir, { recursive: true });
 
 const app = express();
 
 app.use(cors());
-
-app.use(
-  express.json({
-    limit: "2mb"
-  })
-);
+app.use(express.json({ limit: "10mb" }));
 
 app.use(
   "/outputs",
-  express.static(outputDir)
+  express.static(outputsDir, {
+    setHeaders(res) {
+      res.setHeader("Cache-Control", "no-cache");
+    }
+  })
 );
-
-
-/*
-==================================================
-MULTER
-==================================================
-*/
 
 const upload = multer({
-
-  dest: uploadDir,
-
+  dest: uploadsDir,
   limits: {
-    fileSize:
-      MAX_MB * 1024 * 1024
-  },
-
-  fileFilter: (_req, file, cb) => {
-
-    const allowed = [
-
-      "video/mp4",
-      "video/quicktime",
-      "video/webm",
-      "video/x-matroska",
-      "video/mpeg",
-      "video/avi",
-      "video/x-flv",
-      "video/mpg",
-      "video/x-ms-wmv",
-      "video/3gpp"
-
-    ];
-
-    if (
-      allowed.includes(
-        file.mimetype
-      )
-    ) {
-
-      cb(null, true);
-
-    } else {
-
-      cb(
-        new Error(
-          "Unsupported video format."
-        )
-      );
-
-    }
-
+    fileSize: 500 * 1024 * 1024
   }
-
 });
 
+/* =========================
+   COMMAND RUNNER
+========================= */
 
-/*
-==================================================
-ROOT
-==================================================
-*/
-
-app.get("/", (_req, res) => {
-
-  res.json({
-
-    ok: true,
-
-    service:
-      "SUN SPY RECAP V2",
-
-    version:
-      "3.1.0",
-
-    message:
-      "Backend is online.",
-
-    ffmpeg:
-      Boolean(ffmpegPath)
-
-  });
-
-});
-
-
-/*
-==================================================
-HEALTH
-==================================================
-*/
-
-app.get(
-  "/api/health",
-  (_req, res) => {
-
-    res.json({
-
-      ok: true,
-
-      service:
-        "SUN SPY RECAP V2",
-
-      version:
-        "3.1.0",
-
-      geminiConfigured:
-        Boolean(API_KEY),
-
-      model:
-        MODEL,
-
-      ffmpegConfigured:
-        Boolean(ffmpegPath)
-
+function runCommand(command, args) {
+  return new Promise((resolve, reject) => {
+    const process = spawn(command, args, {
+      windowsHide: true
     });
 
-  }
-);
+    let stdout = "";
+    let stderr = "";
 
+    process.stdout.on("data", data => {
+      stdout += data.toString();
+    });
 
-/*
-==================================================
-SLEEP
-==================================================
-*/
+    process.stderr.on("data", data => {
+      stderr += data.toString();
+    });
 
-function sleep(ms) {
+    process.on("error", reject);
 
-  return new Promise(
-    resolve =>
-      setTimeout(
-        resolve,
-        ms
-      )
+    process.on("close", code => {
+      if (code === 0) {
+        resolve({
+          stdout,
+          stderr
+        });
+      } else {
+        const error = new Error(
+          `FFmpeg exited with code ${code}`
+        );
+
+        error.stderr = stderr;
+        error.stdout = stdout;
+
+        reject(error);
+      }
+    });
+  });
+}
+
+/* =========================
+   VIDEO DURATION
+========================= */
+
+async function getVideoDuration(filePath) {
+  const result = await runCommand(ffmpegPath, [
+    "-hide_banner",
+    "-i",
+    filePath
+  ]);
+
+  const match = result.stderr.match(
+    /Duration:\s*(\d+):(\d+):([\d.]+)/
   );
 
+  if (!match) {
+    throw new Error(
+      "Could not detect video duration."
+    );
+  }
+
+  return (
+    Number(match[1]) * 3600 +
+    Number(match[2]) * 60 +
+    Number(match[3])
+  );
 }
 
+/* =========================
+   VIDEO FILTER
+========================= */
 
-/*
-==================================================
-GEMINI VIDEO UPLOAD
-==================================================
-*/
-
-async function uploadToGemini(
-  filePath,
-  mimeType,
-  displayName
+function getVideoFilter(
+  aspectRatio = "9:16",
+  resolution = "1080p"
 ) {
+  const height =
+    resolution === "720p"
+      ? 720
+      : 1080;
 
-  if (!API_KEY) {
+  if (aspectRatio === "16:9") {
+    const width =
+      resolution === "720p"
+        ? 1280
+        : 1920;
 
-    throw new Error(
-      "GEMINI_API_KEY is not configured."
+    return (
+      `scale=${width}:${height}:` +
+      `force_original_aspect_ratio=increase,` +
+      `crop=${width}:${height}`
     );
-
   }
 
-  const stat =
-    await fs.promises.stat(
-      filePath
+  if (aspectRatio === "1:1") {
+    return (
+      `scale=${height}:${height}:` +
+      `force_original_aspect_ratio=increase,` +
+      `crop=${height}:${height}`
     );
-
-
-  const startResponse =
-    await fetch(
-
-      `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${encodeURIComponent(API_KEY)}`,
-
-      {
-
-        method: "POST",
-
-        headers: {
-
-          "x-goog-upload-protocol":
-            "resumable",
-
-          "x-goog-upload-command":
-            "start",
-
-          "x-goog-upload-header-content-length":
-            String(stat.size),
-
-          "x-goog-upload-header-content-type":
-            mimeType,
-
-          "Content-Type":
-            "application/json"
-
-        },
-
-        body:
-          JSON.stringify({
-
-            file: {
-
-              display_name:
-                displayName
-
-            }
-
-          })
-
-      }
-
-    );
-
-
-  if (
-    !startResponse.ok
-  ) {
-
-    const errorText =
-      await startResponse.text();
-
-    throw new Error(
-      `Gemini upload initialization failed: ${errorText}`
-    );
-
   }
 
-
-  const uploadUrl =
-    startResponse.headers.get(
-      "x-goog-upload-url"
-    ) ||
-    startResponse.headers.get(
-      "X-Goog-Upload-URL"
+  if (aspectRatio === "4:5") {
+    const width = Math.round(
+      height * 4 / 5
     );
 
-
-  if (!uploadUrl) {
-
-    throw new Error(
-      "Gemini upload URL was not returned."
+    return (
+      `scale=${width}:${height}:` +
+      `force_original_aspect_ratio=increase,` +
+      `crop=${width}:${height}`
     );
-
   }
 
-
-  const stream =
-    fs.createReadStream(
-      filePath
-    );
-
-
-  const uploadResponse =
-    await fetch(
-
-      uploadUrl,
-
-      {
-
-        method: "POST",
-
-        headers: {
-
-          "Content-Length":
-            String(stat.size),
-
-          "X-Goog-Upload-Offset":
-            "0",
-
-          "X-Goog-Upload-Command":
-            "upload, finalize"
-
-        },
-
-        body:
-          stream,
-
-        duplex:
-          "half"
-
-      }
-
-    );
-
-
-  const uploaded =
-    await uploadResponse.json();
-
-
-  if (
-    !uploadResponse.ok ||
-    !uploaded?.file?.name
-  ) {
-
-    throw new Error(
-
-      uploaded?.error?.message ||
-      "Gemini video upload failed."
-
-    );
-
-  }
-
-
-  return uploaded.file;
-
-}
-
-
-/*
-==================================================
-WAIT FOR GEMINI VIDEO
-==================================================
-*/
-
-async function waitForGeminiFile(
-  fileName
-) {
-
-  for (
-    let attempt = 0;
-    attempt < 120;
-    attempt++
-  ) {
-
-    const response =
-      await fetch(
-
-        `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${encodeURIComponent(API_KEY)}`
-
-      );
-
-
-    const data =
-      await response.json();
-
-
-    if (!response.ok) {
-
-      throw new Error(
-
-        data?.error?.message ||
-        "Could not check Gemini file status."
-
-      );
-
-    }
-
-
-    if (
-      data.state ===
-      "ACTIVE"
-    ) {
-
-      return data;
-
-    }
-
-
-    if (
-      data.state ===
-      "FAILED"
-    ) {
-
-      throw new Error(
-        "Gemini failed to process the uploaded video."
-      );
-
-    }
-
-
-    await sleep(3000);
-
-  }
-
-
-  throw new Error(
-    "Gemini video processing timed out."
+  // 9:16
+  const width = Math.round(
+    height * 9 / 16
   );
 
+  return (
+    `scale=${width}:${height}:` +
+    `force_original_aspect_ratio=increase,` +
+    `crop=${width}:${height}`
+  );
 }
 
+/* =========================
+   SAFE FILE NAME
+========================= */
 
-/*
-==================================================
-GEMINI RECAP
-==================================================
-*/
+function cleanFileName(name) {
+  return String(name || "video")
+    .replace(
+      /[^a-zA-Z0-9._-]/g,
+      "_"
+    )
+    .slice(0, 80);
+}
+
+/* =========================
+   OUTPUT URL
+========================= */
+
+function getOutputUrl(req, filename) {
+  return (
+    `${req.protocol}://` +
+    `${req.get("host")}` +
+    `/outputs/` +
+    encodeURIComponent(filename)
+  );
+}
+
+/* =========================
+   HEALTH
+========================= */
+
+app.get("/", (req, res) => {
+  res.json({
+    ok: true,
+    service: "SUN SPY RECAP V2",
+    version: "3.2.0",
+    message: "Backend is online.",
+    ffmpeg: Boolean(ffmpegPath),
+    geminiConfigured:
+      Boolean(GEMINI_API_KEY),
+    model: GEMINI_MODEL
+  });
+});
+
+app.get("/api/health", (req, res) => {
+  res.json({
+    ok: true,
+    service: "SUN SPY RECAP V2",
+    version: "3.2.0",
+    message: "Backend is online.",
+    ffmpeg: Boolean(ffmpegPath),
+    geminiConfigured:
+      Boolean(GEMINI_API_KEY),
+    model: GEMINI_MODEL
+  });
+});
+
+/* =========================
+   GEMINI RECAP
+========================= */
 
 app.post(
-
   "/api/recap",
-
   upload.single("video"),
-
   async (req, res) => {
 
-    let localPath =
+    let inputFile =
       req.file?.path;
-
-    let geminiFileName =
-      null;
 
     try {
 
-      if (!API_KEY) {
-
+      if (!GEMINI_API_KEY) {
         return res.status(500).json({
-
           ok: false,
-
           error:
             "GEMINI_API_KEY is not configured."
-
         });
-
       }
-
 
       if (!req.file) {
-
         return res.status(400).json({
-
           ok: false,
-
           error:
-            "Please upload a video."
-
+            "No video file uploaded."
         });
-
       }
-
 
       const language =
         req.body.language ||
         "Burmese";
 
-
-      const duration =
-        req.body.duration ||
-        "90 seconds";
-
-
       const style =
         req.body.style ||
         "Cinematic Story";
-
 
       const instructions =
         req.body.instructions ||
         "";
 
+      const duration =
+        req.body.duration ||
+        req.body.durationSeconds ||
+        "60";
 
-      const aspectRatio =
-        req.body.aspectRatio ||
-        "9:16";
+      const videoBuffer =
+        fs.readFileSync(inputFile);
 
+      /* ---------- Upload ---------- */
 
-      /*
-      ----------------------------------------------
-      UPLOAD TO GEMINI
-      ----------------------------------------------
-      */
+      const uploadResponse =
+        await fetch(
+          `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${encodeURIComponent(
+            GEMINI_API_KEY
+          )}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                req.file.mimetype ||
+                "video/mp4",
+
+              "X-Goog-Upload-Protocol":
+                "raw",
+
+              "X-Goog-Upload-Command":
+                "upload"
+            },
+            body: videoBuffer
+          }
+        );
+
+      if (!uploadResponse.ok) {
+        const errorText =
+          await uploadResponse.text();
+
+        throw new Error(
+          `Gemini upload failed: ${errorText}`
+        );
+      }
 
       const uploaded =
-        await uploadToGemini(
+        await uploadResponse.json();
 
-          localPath,
+      const fileUri =
+        uploaded?.file?.uri;
 
-          req.file.mimetype,
+      const fileName =
+        uploaded?.file?.name;
 
-          req.file.originalname
-
+      if (!fileUri) {
+        throw new Error(
+          "Gemini did not return file URI."
         );
+      }
 
+      /* ---------- Wait ---------- */
 
-      geminiFileName =
-        uploaded.name;
+      let state = "PROCESSING";
 
+      for (
+        let i = 0;
+        i < 60;
+        i++
+      ) {
 
-      /*
-      ----------------------------------------------
-      WAIT
-      ----------------------------------------------
-      */
+        const statusResponse =
+          await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${encodeURIComponent(
+              GEMINI_API_KEY
+            )}`
+          );
 
-      const activeFile =
-        await waitForGeminiFile(
-          geminiFileName
+        if (!statusResponse.ok) {
+          const text =
+            await statusResponse.text();
+
+          throw new Error(
+            `Gemini status failed: ${text}`
+          );
+        }
+
+        const status =
+          await statusResponse.json();
+
+        state =
+          status?.state ||
+          status?.file?.state ||
+          "PROCESSING";
+
+        if (state === "ACTIVE") {
+          break;
+        }
+
+        if (state === "FAILED") {
+          throw new Error(
+            "Gemini failed to process video."
+          );
+        }
+
+        await new Promise(
+          resolve =>
+            setTimeout(resolve, 2000)
         );
+      }
 
+      if (state !== "ACTIVE") {
+        throw new Error(
+          "Gemini video processing timeout."
+        );
+      }
 
-      /*
-      ----------------------------------------------
-      PROMPT
-      ----------------------------------------------
-      */
+      /* ---------- Prompt ---------- */
 
       const prompt = `
+You are SUN SPY RECAP AI.
 
-You are SUN SPY RECAP V2,
-a professional AI video recap engine.
-
-Analyze the actual supplied video carefully.
-
-DO NOT invent events.
-
-Identify:
-
-1. Main story
-2. Important scenes
-3. Characters
-4. Key events
-5. Best moments
-6. Scene timestamps
-7. Beginning
-8. Middle
-9. Ending
+Watch and understand the uploaded video.
 
 Create a short-form video recap.
 
-Target language:
-${language}
+Language: ${language}
+Target duration: ${duration} seconds
+Style: ${style}
 
-Target duration:
-${duration}
+Requirements:
 
-Style:
-${style}
+1. Understand the actual story.
+2. Identify important events.
+3. Identify main characters.
+4. Create a strong hook.
+5. Write natural narration.
+6. Create an ending / CTA.
+7. Suggest hashtags.
+8. Do not invent unsupported information.
+9. Return ONLY valid JSON.
 
-Aspect ratio:
-${aspectRatio}
-
-Additional instructions:
-${instructions || "None"}
-
-IMPORTANT:
-
-If Burmese is selected:
-
-- Use natural Burmese.
-- Make narration sound human.
-- Avoid robotic language.
-- Make the opening hook strong.
-- Keep the story easy to understand.
-- Do not add facts that are not visible or supported by the video.
-
-Return ONLY valid JSON.
-
-Use this structure:
+JSON:
 
 {
   "title": "",
   "hook": "",
   "summary": "",
-  "recap_script": "",
-
-  "key_events": [
-    {
-      "timestamp": "00:00",
-      "event": "",
-      "importance": 1
-    }
-  ],
-
   "characters": [
     {
       "name": "",
       "role": ""
     }
   ],
-
-  "scenes": [
+  "keyEvents": [],
+  "bestScenes": [
     {
-      "scene": 1,
-      "start": "00:00",
-      "end": "00:05",
       "description": "",
-      "importance": 1
-    }
-  ],
-
-  "best_scenes": [
-    {
-      "timestamp": "00:00",
       "reason": ""
     }
   ],
-
+  "recapScript": "",
   "ending": "",
-
-  "hashtags": [
-    "#SUNSPY",
-    "#Recap"
-  ]
+  "hashtags": []
 }
 
+Additional instructions:
+
+${instructions}
 `;
 
+      /* ---------- Gemini ---------- */
 
-      /*
-      ----------------------------------------------
-      GEMINI GENERATE
-      ----------------------------------------------
-      */
-
-      const response =
+      const generateResponse =
         await fetch(
-
-          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent?key=${encodeURIComponent(API_KEY)}`,
-
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+            GEMINI_MODEL
+          )}:generateContent?key=${encodeURIComponent(
+            GEMINI_API_KEY
+          )}`,
           {
-
-            method:
-              "POST",
+            method: "POST",
 
             headers: {
-
               "Content-Type":
                 "application/json"
-
             },
 
-            body:
-              JSON.stringify({
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: "user",
 
-                contents: [
+                  parts: [
+                    {
+                      file_data: {
+                        mime_type:
+                          req.file.mimetype ||
+                          "video/mp4",
 
-                  {
-
-                    role:
-                      "user",
-
-                    parts: [
-
-                      {
-
-                        file_data: {
-
-                          mime_type:
-                            activeFile.mimeType ||
-                            req.file.mimetype,
-
-                          file_uri:
-                            activeFile.uri
-
-                        }
-
-                      },
-
-                      {
-
-                        text:
-                          prompt
-
+                        file_uri:
+                          fileUri
                       }
+                    },
 
-                    ]
-
-                  }
-
-                ],
-
-                generationConfig: {
-
-                  temperature:
-                    0.35,
-
-                  responseMimeType:
-                    "application/json"
-
+                    {
+                      text: prompt
+                    }
+                  ]
                 }
+              ],
 
-              })
-
+              generationConfig: {
+                temperature: 0.35,
+                responseMimeType:
+                  "application/json"
+              }
+            })
           }
-
         );
 
+      if (!generateResponse.ok) {
+        const text =
+          await generateResponse.text();
 
-      const data =
-        await response.json();
-
-
-      if (!response.ok) {
-
-        return res.status(
-          response.status
-        ).json({
-
-          ok: false,
-
-          error:
-            data?.error?.message ||
-            "Gemini analysis failed.",
-
-          details:
-            data?.error ||
-            data
-
-        });
-
+        throw new Error(
+          `Gemini generation failed: ${text}`
+        );
       }
 
-
-      /*
-      ----------------------------------------------
-      EXTRACT
-      ----------------------------------------------
-      */
+      const result =
+        await generateResponse.json();
 
       const text =
-        data
+        result
           ?.candidates?.[0]
           ?.content?.parts
           ?.map(
@@ -770,583 +509,192 @@ Use this structure:
           )
           .join("") || "";
 
-
       let recap;
 
-
       try {
-
         recap =
           JSON.parse(text);
-
       } catch {
-
         recap = {
-
           title:
-            "SUN SPY RECAP",
+            "SUN SPY AI Recap",
 
-          hook:
-            "",
+          hook: "",
 
-          summary:
-            text,
+          summary: text,
 
-          recap_script:
-            text,
+          characters: [],
 
-          key_events:
-            [],
+          keyEvents: [],
 
-          characters:
-            [],
+          bestScenes: [],
 
-          scenes:
-            [],
+          recapScript: text,
 
-          best_scenes:
-            [],
+          ending: "",
 
-          ending:
-            "",
-
-          hashtags:
-            [
-              "#SUNSPY",
-              "#Recap"
-            ]
-
+          hashtags: [
+            "#SUNSPY",
+            "#Recap"
+          ]
         };
-
       }
 
-
-      /*
-      ----------------------------------------------
-      RETURN
-      ----------------------------------------------
-      */
-
       res.json({
-
         ok: true,
+        success: true,
 
-        project: {
+        recap,
 
-          originalFilename:
-            req.file.originalname,
-
-          mimeType:
-            req.file.mimetype,
-
-          size:
-            req.file.size,
-
-          language,
-
-          duration,
-
-          style,
-
-          aspectRatio
-
-        },
-
-        recap
-
+        title: recap.title,
+        hook: recap.hook,
+        summary: recap.summary,
+        characters:
+          recap.characters,
+        keyEvents:
+          recap.keyEvents,
+        bestScenes:
+          recap.bestScenes,
+        recapScript:
+          recap.recapScript,
+        ending:
+          recap.ending,
+        hashtags:
+          recap.hashtags
       });
 
-    }
-
-    catch (error) {
+    } catch (error) {
 
       console.error(
         "RECAP ERROR:",
         error
       );
 
-
       res.status(500).json({
-
         ok: false,
-
         error:
           error.message ||
-          "Unexpected server error."
-
+          "Recap generation failed."
       });
 
-    }
+    } finally {
 
-    finally {
-
-      if (localPath) {
-
-        fs.promises
-          .unlink(localPath)
-          .catch(() => {});
-
+      if (inputFile) {
+        try {
+          fs.unlinkSync(
+            inputFile
+          );
+        } catch {}
       }
 
     }
-
   }
-
 );
 
-
-/*
-==================================================
-FFMPEG HELPER
-==================================================
-*/
-
-function runFFmpeg(
-  args
-) {
-
-  return new Promise(
-    (resolve, reject) => {
-
-      if (!ffmpegPath) {
-
-        reject(
-          new Error(
-            "FFmpeg binary is not available."
-          )
-        );
-
-        return;
-
-      }
-
-
-      console.log(
-        "FFmpeg:",
-        ffmpegPath
-      );
-
-
-      const process =
-        spawn(
-          ffmpegPath,
-          args
-        );
-
-
-      let stderr = "";
-
-
-      process.stderr.on(
-        "data",
-        chunk => {
-
-          stderr +=
-            chunk.toString();
-
-        }
-      );
-
-
-      process.on(
-        "error",
-        error => {
-
-          reject(error);
-
-        }
-      );
-
-
-      process.on(
-        "close",
-        code => {
-
-          if (
-            code === 0
-          ) {
-
-            resolve(
-              stderr
-            );
-
-          } else {
-
-            reject(
-
-              new Error(
-                `FFmpeg failed with code ${code}: ${stderr.slice(-4000)}`
-              )
-
-            );
-
-          }
-
-        }
-      );
-
-    }
-  );
-
-}
-
-
-/*
-==================================================
-FFPROBE
-==================================================
-*/
-
-function runFFprobe(
-  filePath
-) {
-
-  return new Promise(
-    (resolve, reject) => {
-
-      if (!ffmpegPath) {
-
-        reject(
-          new Error(
-            "FFmpeg binary is not available."
-          )
-        );
-
-        return;
-
-      }
-
-
-      const args = [
-
-        "-i",
-        filePath,
-
-        "-hide_banner"
-
-      ];
-
-
-      const process =
-        spawn(
-          ffmpegPath,
-          args
-        );
-
-
-      let stderr = "";
-
-
-      process.stderr.on(
-        "data",
-        chunk => {
-
-          stderr +=
-            chunk.toString();
-
-        }
-      );
-
-
-      process.on(
-        "error",
-        error => {
-
-          reject(error);
-
-        }
-      );
-
-
-      process.on(
-        "close",
-        () => {
-
-          const match =
-            stderr.match(
-              /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/
-            );
-
-
-          if (!match) {
-
-            reject(
-              new Error(
-                "Could not detect video duration."
-              )
-            );
-
-            return;
-
-          }
-
-
-          const hours =
-            Number(match[1]);
-
-          const minutes =
-            Number(match[2]);
-
-          const seconds =
-            Number(match[3]);
-
-
-          const duration =
-            hours * 3600 +
-            minutes * 60 +
-            seconds;
-
-
-          resolve(
-            duration
-          );
-
-        }
-      );
-
-    }
-  );
-
-}
-
-
-/*
-==================================================
-ASPECT RATIO
-==================================================
-*/
-
-function getVideoFilter(
-  aspectRatio,
-  resolution
-) {
-
-  let width =
-    resolution === "720p"
-      ? 720
-      : 1080;
-
-  let height =
-    width;
-
-
-  if (
-    aspectRatio ===
-    "9:16"
-  ) {
-
-    height =
-      Math.round(
-        width *
-        16 /
-        9
-      );
-
-  }
-
-  else if (
-    aspectRatio ===
-    "16:9"
-  ) {
-
-    height =
-      Math.round(
-        width *
-        9 /
-        16
-      );
-
-  }
-
-  else if (
-    aspectRatio ===
-    "4:5"
-  ) {
-
-    height =
-      Math.round(
-        width *
-        5 /
-        4
-      );
-
-  }
-
-  else {
-
-    height =
-      width;
-
-  }
-
-
-  /*
-    scale + center crop
-  */
-
-  return {
-
-    width,
-    height,
-
-    filter:
-      `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`
-
-  };
-
-}
-
-
-/*
-==================================================
-REAL VIDEO PROCESSING
-==================================================
-*/
+/* =========================
+   PROCESS VIDEO
+========================= */
 
 app.post(
-
   "/api/process-video",
-
   upload.single("video"),
-
   async (req, res) => {
 
-    let inputPath =
+    let inputFile =
       req.file?.path;
+
+    let outputFile = null;
 
     try {
 
       if (!req.file) {
-
         return res.status(400).json({
-
           ok: false,
-
           error:
-            "Please upload a video."
-
+            "No video file uploaded."
         });
-
       }
 
-
-      const start =
-        Math.max(
-          0,
-          Number(
-            req.body.start || 0
-          )
-        );
-
+      if (!ffmpegPath) {
+        return res.status(500).json({
+          ok: false,
+          error:
+            "FFmpeg is not available."
+        });
+      }
 
       const requestedDuration =
         Number(
           req.body.durationSeconds ||
-          30
+          req.body.duration ||
+          0
         );
-
 
       const aspectRatio =
         req.body.aspectRatio ||
         "9:16";
 
-
       const resolution =
         req.body.resolution ||
         "1080p";
 
-
-      /*
-      ----------------------------------------------
-      VIDEO DURATION
-      ----------------------------------------------
-      */
-
       const sourceDuration =
-        await runFFprobe(
-          inputPath
+        await getVideoDuration(
+          inputFile
         );
 
+      let duration =
+        sourceDuration;
 
       if (
-        start >=
-        sourceDuration
+        Number.isFinite(
+          requestedDuration
+        ) &&
+        requestedDuration > 0
       ) {
-
-        return res.status(400).json({
-
-          ok: false,
-
-          error:
-            "Start time is beyond the video duration."
-
-        });
-
+        duration =
+          Math.min(
+            requestedDuration,
+            sourceDuration
+          );
       }
 
+      const originalName =
+        path.parse(
+          req.file.originalname
+        ).name;
 
-      const duration =
-        Math.min(
-
-          requestedDuration,
-
-          sourceDuration -
-            start
-
+      const safeName =
+        cleanFileName(
+          originalName
         );
 
+      const filename =
+        `${safeName}-sunspy-${Date.now()}.mp4`;
 
-      /*
-      ----------------------------------------------
-      OUTPUT
-      ----------------------------------------------
-      */
-
-      const id =
-        `${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2, 8)}`;
-
-
-      const outputName =
-        `sun-spy-${id}.mp4`;
-
-
-      const outputPath =
+      outputFile =
         path.join(
-          outputDir,
-          outputName
+          outputsDir,
+          filename
         );
 
-
-      const video =
+      const filter =
         getVideoFilter(
           aspectRatio,
           resolution
         );
 
-
-      /*
-      ----------------------------------------------
-      FFMPEG
-      ----------------------------------------------
-      */
-
       const args = [
-
         "-y",
 
-        "-ss",
-        String(start),
-
         "-i",
-        inputPath,
+        inputFile,
 
         "-t",
         String(duration),
 
         "-vf",
-        video.filter,
+        filter,
 
         "-c:v",
         "libx264",
@@ -1357,6 +705,9 @@ app.post(
         "-crf",
         "23",
 
+        "-pix_fmt",
+        "yuv420p",
+
         "-c:a",
         "aac",
 
@@ -1366,80 +717,152 @@ app.post(
         "-movflags",
         "+faststart",
 
-        outputPath
-
+        outputFile
       ];
 
+      console.log(
+        "Starting FFmpeg..."
+      );
 
-      await runFFmpeg(
+      await runCommand(
+        ffmpegPath,
         args
       );
 
+      /* ---------- VERIFY OUTPUT ---------- */
 
-      /*
-      ----------------------------------------------
-      RESULT
-      ----------------------------------------------
-      */
+      if (
+        !fs.existsSync(
+          outputFile
+        )
+      ) {
+        throw new Error(
+          "FFmpeg completed but output file was not created."
+        );
+      }
 
       const stats =
-        await fs.promises.stat(
-          outputPath
+        fs.statSync(
+          outputFile
         );
 
+      if (stats.size <= 0) {
+        throw new Error(
+          "Output video is empty."
+        );
+      }
 
-      res.json({
+      /* ---------- IMPORTANT ---------- */
+
+      const relativeUrl =
+        `/outputs/${encodeURIComponent(
+          filename
+        )}`;
+
+      const absoluteUrl =
+        getOutputUrl(
+          req,
+          filename
+        );
+
+      console.log(
+        "OUTPUT:",
+        absoluteUrl
+      );
+
+      /*
+        Return ALL common URL names.
+        This fixes older frontend versions
+        that expect different property names.
+      */
+
+      return res.status(200).json({
 
         ok: true,
 
+        success: true,
+
+        completed: true,
+
         message:
-          "Video processed successfully.",
+          "Video processing completed.",
 
-        input: {
+        filename:
 
-          filename:
-            req.file.originalname,
+          filename,
 
-          duration:
-            sourceDuration
+        file:
 
-        },
+          relativeUrl,
 
-        output: {
+        path:
 
-          filename:
-            outputName,
+          relativeUrl,
+
+        output:
+
+          relativeUrl,
+
+        url:
+
+          absoluteUrl,
+
+        videoUrl:
+
+          absoluteUrl,
+
+        outputUrl:
+
+          absoluteUrl,
+
+        fileUrl:
+
+          absoluteUrl,
+
+        videoURL:
+
+          absoluteUrl,
+
+        downloadUrl:
+
+          absoluteUrl,
+
+        duration:
 
           duration,
 
-          aspectRatio,
+        sourceDuration:
 
-          resolution,
+          sourceDuration,
 
-          size:
-            stats.size,
+        size:
 
-          url:
-            `/outputs/${outputName}`
-
-        }
+          stats.size
 
       });
 
-
-    }
-
-    catch (error) {
+    } catch (error) {
 
       console.error(
-        "FFMPEG ERROR:",
+        "PROCESS VIDEO ERROR:",
         error
       );
 
+      if (outputFile) {
+        try {
+          fs.unlinkSync(
+            outputFile
+          );
+        } catch {}
+      }
 
-      res.status(500).json({
+      return res.status(500).json({
 
         ok: false,
+
+        success: false,
+
+        completed: false,
 
         error:
           error.message ||
@@ -1447,120 +870,64 @@ app.post(
 
       });
 
-    }
+    } finally {
 
-    finally {
-
-      if (inputPath) {
-
-        fs.promises
-          .unlink(inputPath)
-          .catch(() => {});
-
+      if (inputFile) {
+        try {
+          fs.unlinkSync(
+            inputFile
+          );
+        } catch {}
       }
 
     }
-
   }
-
 );
 
-
-/*
-==================================================
-ERROR HANDLING
-==================================================
-*/
+/* =========================
+   ERROR HANDLER
+========================= */
 
 app.use(
-
-  (err, _req, res, _next) => {
+  (error, req, res, next) => {
 
     console.error(
       "SERVER ERROR:",
-      err
+      error
     );
 
-
-    if (
-      err?.code ===
-      "LIMIT_FILE_SIZE"
-    ) {
-
-      return res.status(
-        413
-      ).json({
-
-        ok: false,
-
-        error:
-          `Video is larger than ${MAX_MB} MB.`
-
-      });
-
-    }
-
-
     res.status(500).json({
-
       ok: false,
-
       error:
-        err?.message ||
-        "Server error."
-
+        error.message ||
+        "Internal server error."
     });
 
   }
-
 );
 
-
-/*
-==================================================
-START
-==================================================
-*/
+/* =========================
+   START
+========================= */
 
 app.listen(
-
   PORT,
-
+  "0.0.0.0",
   () => {
 
     console.log(
-      "===================================="
+      `SUN SPY RECAP V2 running on port ${PORT}`
     );
 
     console.log(
-      "SUN SPY RECAP V2"
+      `FFmpeg: ${
+        ffmpegPath || "NOT FOUND"
+      }`
     );
 
     console.log(
-      "Version: 3.1.0"
-    );
-
-    console.log(
-      `Port: ${PORT}`
-    );
-
-    console.log(
-      `Gemini: ${MODEL}`
-    );
-
-    console.log(
-      `Gemini API: ${Boolean(API_KEY)}`
-    );
-
-    console.log(
-      `FFmpeg: ${ffmpegPath || "NOT FOUND"}`
-    );
-
-    console.log(
-      "===================================="
-
+      `Gemini Model: ${GEMINI_MODEL}`
     );
 
   }
-
 );
