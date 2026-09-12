@@ -2586,4 +2586,469 @@ app.post(
         );
 
       if (
-        stat.size <=
+                stat.size <=
+          0
+      ) {
+        throw new Error(
+          "FFmpeg output file is empty."
+        );
+      }
+
+      const baseUrl =
+        getPublicBaseUrl(
+          req
+        );
+
+      const filename =
+        path.basename(
+          outputFile
+        );
+
+      const outputUrl =
+        `${baseUrl}/outputs/${encodeURIComponent(
+          filename
+        )}`;
+
+      return res.json({
+        ok: true,
+
+        success:
+          true,
+
+        message:
+          "Video processing completed.",
+
+        outputUrl,
+
+        videoUrl:
+          outputUrl,
+
+        url:
+          outputUrl,
+
+        file:
+          outputUrl,
+
+        filename,
+
+        duration:
+          finalDuration,
+
+        sourceDuration,
+
+        aspectRatio,
+
+        resolution,
+
+        sceneAnalysisEnabled,
+
+        bestScenesEnabled,
+
+        selectedScenes:
+          selectedScenes.length,
+
+        recap:
+          recapData || null
+      });
+    } catch (
+      error
+    ) {
+      console.error(
+        "PROCESS VIDEO ERROR:",
+        error
+      );
+
+      return res
+        .status(
+          500
+        )
+        .json({
+          ok: false,
+
+          success:
+            false,
+
+          error:
+            error.message ||
+            "Video processing failed.",
+
+          details:
+            error.stderr
+              ? String(
+                  error.stderr
+                ).slice(
+                  -5000
+                )
+              : undefined
+        });
+    } finally {
+      if (
+        inputFile &&
+        fs.existsSync(
+          inputFile
+        )
+      ) {
+        try {
+          fs.unlinkSync(
+            inputFile
+          );
+        } catch (
+          cleanupError
+        ) {
+          console.error(
+            "INPUT CLEANUP ERROR:",
+            cleanupError.message
+          );
+        }
+      }
+    }
+  }
+);
+
+/* =====================================================
+   OUTPUT FILE FALLBACK
+===================================================== */
+
+app.get(
+  "/api/outputs/:filename",
+  (
+    req,
+    res
+  ) => {
+    const filename =
+      path.basename(
+        req.params.filename
+      );
+
+    const filePath =
+      path.join(
+        OUTPUT_DIR,
+        filename
+      );
+
+    if (
+      !fs.existsSync(
+        filePath
+      )
+    ) {
+      return res
+        .status(
+          404
+        )
+        .json({
+          ok: false,
+
+          error:
+            "Output file not found."
+        });
+    }
+
+    return res.sendFile(
+      filePath
+    );
+  }
+);
+
+/* =====================================================
+   DIRECT OUTPUT ROUTE
+===================================================== */
+
+app.get(
+  "/outputs/:filename",
+  (
+    req,
+    res
+  ) => {
+    const filename =
+      path.basename(
+        req.params.filename
+      );
+
+    const filePath =
+      path.join(
+        OUTPUT_DIR,
+        filename
+      );
+
+    if (
+      !fs.existsSync(
+        filePath
+      )
+    ) {
+      return res
+        .status(
+          404
+        )
+        .send(
+          "Output file not found."
+        );
+    }
+
+    res.setHeader(
+      "Content-Type",
+      "video/mp4"
+    );
+
+    res.setHeader(
+      "Accept-Ranges",
+      "bytes"
+    );
+
+    return res.sendFile(
+      filePath
+    );
+  }
+);
+
+/* =====================================================
+   404
+===================================================== */
+
+app.use(
+  (
+    req,
+    res
+  ) => {
+    res
+      .status(
+        404
+      )
+      .json({
+        ok: false,
+
+        error:
+          "Route not found.",
+
+        path:
+          req.originalUrl
+      });
+  }
+);
+
+/* =====================================================
+   ERROR HANDLER
+===================================================== */
+
+app.use(
+  (
+    error,
+    _req,
+    res,
+    _next
+  ) => {
+    console.error(
+      "EXPRESS ERROR:",
+      error
+    );
+
+    if (
+      error instanceof
+      multer.MulterError
+    ) {
+      return res
+        .status(
+          400
+        )
+        .json({
+          ok: false,
+
+          error:
+            error.message ||
+            "Upload error."
+        });
+    }
+
+    return res
+      .status(
+        500
+      )
+      .json({
+        ok: false,
+
+        error:
+          error.message ||
+          "Internal server error."
+      });
+  }
+);
+
+/* =====================================================
+   CLEAN OLD FILES
+===================================================== */
+
+function cleanupOldFiles() {
+  const now =
+    Date.now();
+
+  const maxAge =
+    6 *
+    60 *
+    60 *
+    1000;
+
+  for (
+    const dir of [
+      UPLOAD_DIR,
+      OUTPUT_DIR,
+      TEMP_DIR
+    ]
+  ) {
+    if (
+      !fs.existsSync(
+        dir
+      )
+    ) {
+      continue;
+    }
+
+    let files;
+
+    try {
+      files =
+        fs.readdirSync(
+          dir
+        );
+    } catch {
+      continue;
+    }
+
+    for (
+      const filename of
+        files
+    ) {
+      const filePath =
+        path.join(
+          dir,
+          filename
+        );
+
+      try {
+        const stat =
+          fs.statSync(
+            filePath
+          );
+
+        if (
+          stat.isFile() &&
+          now -
+            stat.mtimeMs >
+            maxAge
+        ) {
+          fs.unlinkSync(
+            filePath
+          );
+
+          console.log(
+            "Cleaned old file:",
+            filePath
+          );
+        }
+      } catch {}
+    }
+  }
+}
+
+setInterval(
+  cleanupOldFiles,
+  60 *
+    60 *
+    1000
+);
+
+cleanupOldFiles();
+
+/* =====================================================
+   START SERVER
+===================================================== */
+
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "SUN SPY RECAP V2"
+    );
+
+    console.log(
+      "Backend version: 4.1.0"
+    );
+
+    console.log(
+      `Port: ${PORT}`
+    );
+
+    console.log(
+      `Gemini: ${
+        GEMINI_API_KEY
+          ? "CONFIGURED"
+          : "NOT CONFIGURED"
+      }`
+    );
+
+    console.log(
+      `Primary model: ${GEMINI_MODEL}`
+    );
+
+    console.log(
+      `Fallback model: ${GEMINI_FALLBACK_MODEL}`
+    );
+
+    console.log(
+      `FFmpeg: ${
+        ffmpegPath
+          ? "AVAILABLE"
+          : "NOT AVAILABLE"
+      }`
+    );
+
+    console.log(
+      `Output directory: ${OUTPUT_DIR}`
+    );
+
+    console.log(
+      "Scene Analysis: ENABLED"
+    );
+
+    console.log(
+      "Best Scene Selection: ENABLED"
+    );
+
+    console.log(
+      "Output Serving: ENABLED"
+    );
+
+    console.log(
+      "========================================"
+    );
+  }
+);
+
+process.on(
+  "SIGTERM",
+  () => {
+    console.log(
+      "SIGTERM received. Shutting down..."
+    );
+
+    process.exit(
+      0
+    );
+  }
+);
+
+process.on(
+  "SIGINT",
+  () => {
+    console.log(
+      "SIGINT received. Shutting down..."
+    );
+
+    process.exit(
+      0
+    );
+  }
+);
