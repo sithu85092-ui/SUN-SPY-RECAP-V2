@@ -10,7 +10,6 @@ const { spawn } = require("child_process");
 const ffmpegPath = require("ffmpeg-static");
 
 const app = express();
-
 const PORT = process.env.PORT || 10000;
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -19,24 +18,21 @@ const GEMINI_MODEL =
   process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
 const GEMINI_FALLBACK_MODEL =
-  process.env.GEMINI_FALLBACK_MODEL ||
-  "gemini-2.5-flash";
+  process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash";
 
 const ROOT_DIR = __dirname;
 
-const UPLOAD_DIR =
-  path.join(ROOT_DIR, "uploads");
+const UPLOAD_DIR = path.join(ROOT_DIR, "uploads");
+const OUTPUT_DIR = path.join(ROOT_DIR, "outputs");
+const TEMP_DIR = path.join(ROOT_DIR, "temp");
 
-const OUTPUT_DIR =
-  path.join(ROOT_DIR, "outputs");
-
-fs.mkdirSync(UPLOAD_DIR, {
-  recursive: true
+[UPLOAD_DIR, OUTPUT_DIR, TEMP_DIR].forEach((dir) => {
+  fs.mkdirSync(dir, { recursive: true });
 });
 
-fs.mkdirSync(OUTPUT_DIR, {
-  recursive: true
-});
+/* =====================================================
+   EXPRESS
+===================================================== */
 
 app.use(cors());
 
@@ -48,9 +44,14 @@ app.use(
 
 app.use(
   express.urlencoded({
-    extended: true
+    extended: true,
+    limit: "20mb"
   })
 );
+
+/* =====================================================
+   STATIC FILES
+===================================================== */
 
 app.use(
   "/uploads",
@@ -59,9 +60,12 @@ app.use(
 
 app.use(
   "/outputs",
-  express.static(OUTPUT_DIR)
+  express.static(OUTPUT_DIR, {
+    maxAge: "1h",
+    etag: true,
+    acceptRanges: true
+  })
 );
-
 
 /* =====================================================
    MULTER
@@ -101,13 +105,11 @@ const upload =
     }
   });
 
-
 /* =====================================================
    JOB STORAGE
 ===================================================== */
 
 const jobs = new Map();
-
 
 function createJob() {
   const id =
@@ -147,7 +149,6 @@ function createJob() {
   return job;
 }
 
-
 function updateJob(
   id,
   data
@@ -157,14 +158,19 @@ function updateJob(
 
   if (!job) return;
 
-  Object.assign(job, data);
+  Object.assign(
+    job,
+    data
+  );
 
   job.updatedAt =
     Date.now();
 
-  jobs.set(id, job);
+  jobs.set(
+    id,
+    job
+  );
 }
-
 
 /* =====================================================
    HELPERS
@@ -173,12 +179,102 @@ function updateJob(
 function sleep(ms) {
   return new Promise(
     (resolve) =>
-      setTimeout(resolve, ms)
+      setTimeout(
+        resolve,
+        ms
+      )
   );
 }
 
+function boolValue(
+  value,
+  fallback = false
+) {
+  if (
+    value ===
+      undefined ||
+    value ===
+      null ||
+    value === ""
+  ) {
+    return fallback;
+  }
 
-function getPublicBaseUrl(req) {
+  if (
+    typeof value ===
+    "boolean"
+  ) {
+    return value;
+  }
+
+  return [
+    "true",
+    "1",
+    "yes",
+    "on",
+    "enabled"
+  ].includes(
+    String(
+      value
+    ).toLowerCase()
+  );
+}
+
+function firstValue(
+  object,
+  keys,
+  fallback
+) {
+  for (
+    const key of keys
+  ) {
+    if (
+      object[key] !==
+        undefined &&
+      object[key] !==
+        null &&
+      object[key] !== ""
+    ) {
+      return object[key];
+    }
+  }
+
+  return fallback;
+}
+
+function parseJsonMaybe(
+  value,
+  fallback = null
+) {
+  if (
+    value ===
+      undefined ||
+    value ===
+      null ||
+    value === ""
+  ) {
+    return fallback;
+  }
+
+  if (
+    typeof value ===
+    "object"
+  ) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(
+      value
+    );
+  } catch {
+    return fallback;
+  }
+}
+
+function getPublicBaseUrl(
+  req
+) {
   const configured =
     process.env.PUBLIC_BASE_URL ||
     process.env.RENDER_EXTERNAL_URL;
@@ -206,7 +302,6 @@ function getPublicBaseUrl(req) {
   return `${protocol}://${host}`;
 }
 
-
 /* =====================================================
    COMMAND RUNNER
 ===================================================== */
@@ -219,15 +314,19 @@ function runCommand(
   return new Promise(
     (resolve, reject) => {
       const child =
-        spawn(command, args, {
-          ...options,
+        spawn(
+          command,
+          args,
+          {
+            ...options,
 
-          stdio: [
-            "ignore",
-            "pipe",
-            "pipe"
-          ]
-        });
+            stdio: [
+              "ignore",
+              "pipe",
+              "pipe"
+            ]
+          }
+        );
 
       let stdout = "";
       let stderr = "";
@@ -256,34 +355,39 @@ function runCommand(
       child.on(
         "close",
         (code) => {
-          if (code === 0) {
+          if (
+            code === 0
+          ) {
             resolve({
               stdout,
               stderr
             });
-          } else {
-            const error =
-              new Error(
-                `Command failed with code ${code}`
-              );
 
-            error.code =
-              code;
-
-            error.stdout =
-              stdout;
-
-            error.stderr =
-              stderr;
-
-            reject(error);
+            return;
           }
+
+          const error =
+            new Error(
+              `Command failed with code ${code}`
+            );
+
+          error.code =
+            code;
+
+          error.stdout =
+            stdout;
+
+          error.stderr =
+            stderr;
+
+          reject(
+            error
+          );
         }
       );
     }
   );
 }
-
 
 /* =====================================================
    VIDEO DURATION
@@ -319,22 +423,20 @@ async function getVideoDuration(
     );
   }
 
-  const hours =
-    Number(match[1]);
-
-  const minutes =
-    Number(match[2]);
-
-  const seconds =
-    Number(match[3]);
-
   return (
-    hours * 3600 +
-    minutes * 60 +
-    seconds
+    Number(
+      match[1]
+    ) *
+      3600 +
+    Number(
+      match[2]
+    ) *
+      60 +
+    Number(
+      match[3]
+    )
   );
 }
-
 
 /* =====================================================
    VIDEO FILTER
@@ -348,14 +450,14 @@ function getVideoFilter(
   ) {
     case "16:9":
       return [
-        "scale=trunc(ih*16/9/2)*2:trunc(ih/2)*2",
-        "crop=trunc(iw/2)*2:trunc(ih/2)*2"
+        "crop=min(iw\\,ih*16/9):min(ih\\,iw*9/16)",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2"
       ].join(",");
 
     case "1:1":
       return [
         "crop=min(iw\\,ih):min(iw\\,ih)",
-        "scale=trunc(min(iw\\,ih)/2)*2:trunc(min(iw\\,ih)/2)*2"
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2"
       ].join(",");
 
     case "4:5":
@@ -368,11 +470,10 @@ function getVideoFilter(
     default:
       return [
         "crop=min(iw\\,ih*9/16):min(ih\\,iw*16/9)",
-        "scale=trunc(ih*9/16/2)*2:trunc(ih/2)*2"
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2"
       ].join(",");
   }
 }
-
 
 /* =====================================================
    GEMINI ERROR
@@ -381,10 +482,13 @@ function getVideoFilter(
 function getGeminiStatus(
   error
 ) {
-  if (!error)
+  if (!error) {
     return null;
+  }
 
-  if (error.status) {
+  if (
+    error.status
+  ) {
     return Number(
       error.status
     );
@@ -401,10 +505,11 @@ function getGeminiStatus(
     );
 
   return match
-    ? Number(match[1])
+    ? Number(
+        match[1]
+      )
     : null;
 }
-
 
 function isRetryableGeminiError(
   error
@@ -417,10 +522,11 @@ function isRetryableGeminiError(
     503,
     504
   ].includes(
-    getGeminiStatus(error)
+    getGeminiStatus(
+      error
+    )
   );
 }
-
 
 function extractGeminiError(
   data
@@ -450,7 +556,6 @@ function extractGeminiError(
   );
 }
 
-
 /* =====================================================
    GEMINI REQUEST
 ===================================================== */
@@ -472,12 +577,17 @@ async function geminiRequest(
 
   try {
     data =
-      JSON.parse(text);
+      JSON.parse(
+        text
+      );
   } catch {
-    data = text;
+    data =
+      text;
   }
 
-  if (!response.ok) {
+  if (
+    !response.ok
+  ) {
     const error =
       new Error(
         extractGeminiError(
@@ -497,7 +607,6 @@ async function geminiRequest(
   return data;
 }
 
-
 /* =====================================================
    GEMINI FILE UPLOAD
 ===================================================== */
@@ -506,7 +615,9 @@ async function uploadGeminiFile(
   filePath,
   mimeType
 ) {
-  if (!GEMINI_API_KEY) {
+  if (
+    !GEMINI_API_KEY
+  ) {
     throw new Error(
       "GEMINI_API_KEY is not configured."
     );
@@ -527,7 +638,8 @@ async function uploadGeminiFile(
     await fetch(
       uploadUrl,
       {
-        method: "POST",
+        method:
+          "POST",
 
         headers: {
           "Content-Type":
@@ -541,7 +653,8 @@ async function uploadGeminiFile(
             "start, upload, finalize"
         },
 
-        body: fileBuffer
+        body:
+          fileBuffer
       }
     );
 
@@ -552,12 +665,16 @@ async function uploadGeminiFile(
 
   try {
     data =
-      JSON.parse(text);
+      JSON.parse(
+        text
+      );
   } catch {
     data = null;
   }
 
-  if (!response.ok) {
+  if (
+    !response.ok
+  ) {
     const error =
       new Error(
         `Gemini file upload failed: ${extractGeminiError(
@@ -577,21 +694,17 @@ async function uploadGeminiFile(
   );
 }
 
-
 /* =====================================================
-   WAIT FOR GEMINI FILE
+   WAIT GEMINI FILE
 ===================================================== */
 
 async function waitForGeminiFile(
   fileName,
   jobId
 ) {
-  const maxAttempts =
-    90;
-
   for (
     let attempt = 1;
-    attempt <= maxAttempts;
+    attempt <= 90;
     attempt++
   ) {
     const url =
@@ -617,13 +730,14 @@ async function waitForGeminiFile(
       updateJob(
         jobId,
         {
-          progress: 35,
+          progress:
+            35,
 
           step:
             "Analyzing",
 
           message:
-            "Video is ready. Gemini is analyzing the story..."
+            "Gemini is analyzing the actual video..."
         }
       );
 
@@ -634,8 +748,10 @@ async function waitForGeminiFile(
     }
 
     if (
-      state === "FAILED" ||
-      state === "ERROR"
+      state ===
+        "FAILED" ||
+      state ===
+        "ERROR"
     ) {
       throw new Error(
         `Gemini file processing failed: ${JSON.stringify(
@@ -644,20 +760,18 @@ async function waitForGeminiFile(
       );
     }
 
-    const progress =
-      Math.min(
-        34,
-        10 +
-          Math.floor(
-            attempt /
-              3
-          )
-      );
-
     updateJob(
       jobId,
       {
-        progress,
+        progress:
+          Math.min(
+            34,
+            10 +
+              Math.floor(
+                attempt /
+                  3
+              )
+          ),
 
         step:
           "Processing",
@@ -677,9 +791,8 @@ async function waitForGeminiFile(
   );
 }
 
-
 /* =====================================================
-   GEMINI JSON
+   GEMINI TEXT
 ===================================================== */
 
 function extractGeminiText(
@@ -690,14 +803,14 @@ function extractGeminiText(
       ?.content?.parts
       ?.map(
         (part) =>
-          part.text || ""
+          part.text ||
+          ""
       )
       .join("") ||
     "";
 
   return text.trim();
 }
-
 
 function cleanJsonText(
   text
@@ -740,9 +853,10 @@ function cleanJsonText(
     );
 
   if (
-    firstBrace !== -1 &&
-    lastBrace !== -1 &&
-    lastBrace > firstBrace
+    firstBrace !==
+      -1 &&
+    lastBrace >
+      firstBrace
   ) {
     cleaned =
       cleaned.slice(
@@ -754,18 +868,14 @@ function cleanJsonText(
   return cleaned;
 }
 
-
 function parseGeminiJson(
   text
 ) {
-  const cleaned =
-    cleanJsonText(
-      text
-    );
-
   try {
     return JSON.parse(
-      cleaned
+      cleanJsonText(
+        text
+      )
     );
   } catch {
     throw new Error(
@@ -774,16 +884,18 @@ function parseGeminiJson(
   }
 }
 
-
 /* =====================================================
-   PROMPT
+   GEMINI PROMPT
 ===================================================== */
 
 function buildRecapPrompt({
   language,
   durationSeconds,
   style,
-  instructions
+  instructions,
+  sceneAnalysisEnabled,
+  bestScenesEnabled,
+  recapEnabled
 }) {
   const targetLanguage =
     language ===
@@ -794,27 +906,16 @@ function buildRecapPrompt({
   return `
 You are SUN SPY RECAP AI.
 
-Analyze the uploaded video carefully.
+Watch and understand the ACTUAL uploaded video.
 
-Understand the ACTUAL video before writing.
-
-Identify:
-- main story
-- important events
-- main characters
-- strongest hook
-- key scenes
-- ending
-
-Do NOT invent events.
-
-Create a natural short-form recap suitable for TikTok,
-YouTube Shorts and Facebook Reels.
+Never invent events.
+Never invent characters.
+Never invent timestamps.
 
 Target language:
 ${targetLanguage}
 
-Target duration:
+Target recap duration:
 ${durationSeconds} seconds
 
 Style:
@@ -823,41 +924,129 @@ ${style || "Cinematic Story"}
 Additional instructions:
 ${instructions || "None"}
 
+SCENE ANALYSIS:
+${
+  sceneAnalysisEnabled
+    ? `
+ON
+
+Analyze the complete video timeline.
+
+Identify meaningful scenes.
+
+Every scene MUST contain:
+- start
+- end
+- description
+- score
+- narration
+
+start and end are seconds from the beginning
+of the actual uploaded video.
+`
+    : `
+OFF
+
+Return scenes as an empty array.
+`
+}
+
+BEST SCENE SELECTION:
+${
+  bestScenesEnabled
+    ? `
+ON
+
+Select the most important scenes for the recap.
+
+Return them inside bestScenes.
+
+bestScenes MUST use timestamps from scenes.
+`
+    : `
+OFF
+
+Return bestScenes as an empty array.
+`
+}
+
+AI RECAP:
+${
+  recapEnabled
+    ? `
+ON
+
+Write a natural recap narration.
+`
+    : `
+OFF
+
+Return recapScript as an empty string.
+`
+}
+
 Return ONLY valid JSON.
 
 Use exactly:
 
 {
   "title": "Short attractive title",
+
   "hook": "Strong opening hook",
-  "summary": "Short summary",
+
+  "summary": "Factual short summary",
+
   "characters": [
     {
       "name": "Character name",
       "role": "Character role"
     }
   ],
+
   "scenes": [
     {
       "order": 1,
-      "description": "What happens",
+      "start": 0,
+      "end": 5,
+      "score": 90,
+      "description": "Actual event",
       "narration": "Narration"
     }
   ],
-  "recapScript": "Complete narration script",
+
+  "bestScenes": [
+    {
+      "order": 1,
+      "start": 0,
+      "end": 5,
+      "score": 95,
+      "reason": "Why this scene is important"
+    }
+  ],
+
+  "recapScript": "Complete narration",
+
   "ending": "Ending or CTA",
+
   "hashtags": [
     "#hashtag1",
     "#hashtag2",
     "#hashtag3"
   ]
 }
+
+IMPORTANT:
+
+- timestamps must be based on the actual uploaded video
+- start < end
+- bestScenes must be a subset of scenes
+- do not create fake scenes
+- do not describe events that do not happen
 `;
 }
 
-
 /* =====================================================
-   GENERATE GEMINI RECAP
+   GENERATE RECAP
 ===================================================== */
 
 async function generateGeminiRecap({
@@ -867,26 +1056,20 @@ async function generateGeminiRecap({
   durationSeconds,
   style,
   instructions,
-  jobId
+  jobId,
+  sceneAnalysisEnabled,
+  bestScenesEnabled,
+  recapEnabled
 }) {
-  const models = [];
-
-  [
+  const models = [
     GEMINI_MODEL,
     GEMINI_FALLBACK_MODEL
-  ].forEach(
-    (model) => {
-      if (
-        model &&
-        !models.includes(
-          model
-        )
-      ) {
-        models.push(
-          model
-        );
-      }
-    }
+  ].filter(
+    (model, index, array) =>
+      model &&
+      array.indexOf(
+        model
+      ) === index
   );
 
   const prompt =
@@ -894,7 +1077,10 @@ async function generateGeminiRecap({
       language,
       durationSeconds,
       style,
-      instructions
+      instructions,
+      sceneAnalysisEnabled,
+      bestScenesEnabled,
+      recapEnabled
     });
 
   let lastError =
@@ -912,13 +1098,14 @@ async function generateGeminiRecap({
         updateJob(
           jobId,
           {
-            progress: 45,
+            progress:
+              45,
 
             step:
               "Recap",
 
             message:
-              `Gemini is generating your recap...`
+              "Gemini is analyzing scenes and generating the recap..."
           }
         );
 
@@ -945,40 +1132,46 @@ async function generateGeminiRecap({
               },
 
               body:
-                JSON.stringify({
-                  contents: [
-                    {
-                      role:
-                        "user",
-
-                      parts: [
+                JSON.stringify(
+                  {
+                    contents:
+                      [
                         {
-                          text:
-                            prompt
-                        },
+                          role:
+                            "user",
 
-                        {
-                          file_data: {
-                            mime_type:
-                              mimeType ||
-                              "video/mp4",
+                          parts:
+                            [
+                              {
+                                text:
+                                  prompt
+                              },
 
-                            file_uri:
-                              fileUri
-                          }
+                              {
+                                file_data:
+                                  {
+                                    mime_type:
+                                      mimeType ||
+                                      "video/mp4",
+
+                                    file_uri:
+                                      fileUri
+                                  }
+                              }
+                            ]
                         }
-                      ]
-                    }
-                  ],
+                      ],
 
-                  generationConfig: {
-                    temperature:
-                      0.65,
+                    generationConfig:
+                      {
+                        temperature:
+                          0.55,
 
-                    responseMimeType:
-                      "application/json"
+                        responseMimeType:
+                          "application/json"
+                      }
                   }
-                })
+                )
             }
           );
 
@@ -1001,13 +1194,14 @@ async function generateGeminiRecap({
         updateJob(
           jobId,
           {
-            progress: 60,
+            progress:
+              60,
 
             step:
               "Recap",
 
             message:
-              "AI recap generated successfully."
+              "Gemini scene analysis completed."
           }
         );
 
@@ -1017,13 +1211,15 @@ async function generateGeminiRecap({
           attempts:
             attempt
         };
-
-      } catch (error) {
+      } catch (
+        error
+      ) {
         lastError =
           error;
 
         console.error(
-          `Gemini error: ${error.message}`
+          "Gemini error:",
+          error.message
         );
 
         if (
@@ -1035,7 +1231,8 @@ async function generateGeminiRecap({
         }
 
         if (
-          attempt < 3
+          attempt <
+          3
         ) {
           await sleep(
             2000 *
@@ -1069,7 +1266,6 @@ async function generateGeminiRecap({
   throw error;
 }
 
-
 /* =====================================================
    BACKGROUND RECAP JOB
 ===================================================== */
@@ -1078,7 +1274,7 @@ async function processRecapJob(
   job,
   options
 ) {
-  let localFile =
+  const localFile =
     options.filePath;
 
   try {
@@ -1088,7 +1284,8 @@ async function processRecapJob(
         status:
           "processing",
 
-        progress: 5,
+        progress:
+          5,
 
         step:
           "Upload",
@@ -1103,19 +1300,6 @@ async function processRecapJob(
         localFile,
         options.mimeType
       );
-
-    updateJob(
-      job.id,
-      {
-        progress: 20,
-
-        step:
-          "Processing",
-
-        message:
-          "Gemini received the video."
-      }
-    );
 
     const fileName =
       geminiFile?.name;
@@ -1132,6 +1316,20 @@ async function processRecapJob(
         "Gemini did not return a valid file reference."
       );
     }
+
+    updateJob(
+      job.id,
+      {
+        progress:
+          20,
+
+        step:
+          "Processing",
+
+        message:
+          "Gemini received the video."
+      }
+    );
 
     const activeFile =
       await waitForGeminiFile(
@@ -1165,7 +1363,16 @@ async function processRecapJob(
             options.instructions,
 
           jobId:
-            job.id
+            job.id,
+
+          sceneAnalysisEnabled:
+            options.sceneAnalysisEnabled,
+
+          bestScenesEnabled:
+            options.bestScenesEnabled,
+
+          recapEnabled:
+            options.recapEnabled
         }
       );
 
@@ -1175,13 +1382,14 @@ async function processRecapJob(
         status:
           "complete",
 
-        progress: 100,
+        progress:
+          100,
 
         step:
           "Complete",
 
         message:
-          "AI recap completed.",
+          "AI scene analysis and recap completed.",
 
         recap:
           result.recap,
@@ -1190,11 +1398,21 @@ async function processRecapJob(
           result.model,
 
         attempts:
-          result.attempts
+          result.attempts,
+
+        sceneAnalysisEnabled:
+          options.sceneAnalysisEnabled,
+
+        bestScenesEnabled:
+          options.bestScenesEnabled,
+
+        recapEnabled:
+          options.recapEnabled
       }
     );
-
-  } catch (error) {
+  } catch (
+    error
+  ) {
     console.error(
       "BACKGROUND RECAP ERROR:",
       error
@@ -1206,7 +1424,8 @@ async function processRecapJob(
         status:
           "failed",
 
-        progress: 100,
+        progress:
+          100,
 
         step:
           "Failed",
@@ -1224,7 +1443,6 @@ async function processRecapJob(
           true
       }
     );
-
   } finally {
     if (
       localFile &&
@@ -1241,363 +1459,448 @@ async function processRecapJob(
   }
 }
 
-
 /* =====================================================
-   HOME
+   SCENE NORMALIZATION
 ===================================================== */
 
-app.get(
-  "/",
-  (_req, res) => {
-    res.json({
-      ok: true,
+function normalizeScene(
+  scene,
+  index
+) {
+  const start =
+    Number(
+      firstValue(
+        scene,
+        [
+          "start",
+          "startTime",
+          "start_seconds",
+          "startSeconds"
+        ],
+        0
+      )
+    );
 
-      service:
-        "SUN SPY RECAP V2",
+  const end =
+    Number(
+      firstValue(
+        scene,
+        [
+          "end",
+          "endTime",
+          "end_seconds",
+          "endSeconds"
+        ],
+        start +
+          3
+      )
+    );
 
-      version:
-        "4.0.0",
+  return {
+    order:
+      Number(
+        scene.order ||
+          index +
+            1
+      ),
 
-      message:
-        "Backend is online.",
+    start:
+      Math.max(
+        0,
+        start
+      ),
 
-      ffmpeg:
-        Boolean(
-          ffmpegPath
-        ),
+    end:
+      Math.max(
+        start +
+          0.25,
+        end
+      ),
 
-      geminiConfigured:
-        Boolean(
-          GEMINI_API_KEY
-        ),
+    score:
+      Number(
+        scene.score ||
+          scene.importance ||
+          0
+      ),
 
-      model:
-        GEMINI_MODEL,
+    description:
+      String(
+        scene.description ||
+          scene.event ||
+          ""
+      ),
 
-      fallbackModel:
-        GEMINI_FALLBACK_MODEL,
-
-      jobs:
-        jobs.size
-    });
-  }
-);
-
-
-/* =====================================================
-   HEALTH
-===================================================== */
-
-app.get(
-  "/api/health",
-  (_req, res) => {
-    res.json({
-      ok: true,
-
-      service:
-        "SUN SPY RECAP V2",
-
-      version:
-        "4.0.0",
-
-      message:
-        "Backend is online.",
-
-      ffmpeg:
-        Boolean(
-          ffmpegPath
-        ),
-
-      geminiConfigured:
-        Boolean(
-          GEMINI_API_KEY
-        ),
-
-      model:
-        GEMINI_MODEL,
-
-      fallbackModel:
-        GEMINI_FALLBACK_MODEL,
-
-      jobs:
-        jobs.size
-    });
-  }
-);
-
+    narration:
+      String(
+        scene.narration ||
+          ""
+      )
+  };
+}
 
 /* =====================================================
-   CREATE RECAP JOB
+   BEST SCENE SELECTOR
 ===================================================== */
 
-app.post(
-  "/api/recap",
-  upload.single("video"),
+function selectBestScenes(
+  scenes,
+  targetDuration,
+  sourceDuration
+) {
+  const normalized =
+    (
+      Array.isArray(
+        scenes
+      )
+        ? scenes
+        : []
+    )
+      .map(
+        normalizeScene
+      )
+      .filter(
+        (scene) =>
+          scene.end >
+            scene.start &&
+          scene.start <
+            sourceDuration
+      )
+      .map(
+        (scene) => ({
+          ...scene,
 
-  async (
-    req,
-    res
-  ) => {
-    try {
-      if (
-        !GEMINI_API_KEY
-      ) {
-        return res
-          .status(500)
-          .json({
-            ok: false,
-
-            error:
-              "GEMINI_API_KEY is not configured on the server."
-          });
-      }
-
-      if (
-        !req.file
-      ) {
-        return res
-          .status(400)
-          .json({
-            ok: false,
-
-            error:
-              "No video file uploaded."
-          });
-      }
-
-      const durationSeconds =
-        Math.max(
-          5,
-
-          Number(
-            req.body
-              .durationSeconds ||
-              req.body.duration ||
-              30
-          )
-        );
-
-      const language =
-        req.body.language ||
-        "Burmese";
-
-      const style =
-        req.body.style ||
-        "Cinematic Story";
-
-      const instructions =
-        req.body.instructions ||
-        req.body.prompt ||
-        "";
-
-      const mimeType =
-        req.file.mimetype ||
-        "video/mp4";
-
-      const job =
-        createJob();
-
-      updateJob(
-        job.id,
-        {
-          message:
-            "Job created."
-        }
+          end:
+            Math.min(
+              scene.end,
+              sourceDuration
+            )
+        })
+      )
+      .sort(
+        (a, b) =>
+          b.score -
+            a.score ||
+          a.start -
+            b.start
       );
 
-      const filePath =
-        req.file.path;
+  if (
+    !normalized.length
+  ) {
+    return [];
+  }
 
-      processRecapJob(
-        job,
-        {
-          filePath,
+  const selected =
+    [];
 
-          mimeType,
+  let total =
+    0;
 
-          language,
+  for (
+    const scene of
+      normalized
+  ) {
+    if (
+      total >=
+      targetDuration
+    ) {
+      break;
+    }
 
-          style,
+    const sceneDuration =
+      scene.end -
+      scene.start;
 
-          instructions,
+    if (
+      sceneDuration <=
+      0
+    ) {
+      continue;
+    }
 
-          durationSeconds
-        }
+    const remaining =
+      targetDuration -
+      total;
+
+    if (
+      sceneDuration <=
+      remaining +
+        0.5
+    ) {
+      selected.push(
+        scene
       );
 
-      return res.json({
-        ok: true,
+      total +=
+        sceneDuration;
+    } else if (
+      remaining >=
+      0.8
+    ) {
+      selected.push({
+        ...scene,
 
-        success: true,
-
-        jobId:
-          job.id,
-
-        status:
-          job.status,
-
-        message:
-          "Recap job started."
+        end:
+          scene.start +
+          remaining
       });
 
-    } catch (error) {
-      console.error(
-        "CREATE RECAP ERROR:",
-        error
-      );
+      total +=
+        remaining;
 
-      return res
-        .status(500)
-        .json({
-          ok: false,
-
-          error:
-            error.message ||
-            "Could not create recap job."
-        });
+      break;
     }
   }
-);
 
-
-/* =====================================================
-   JOB STATUS
-===================================================== */
-
-app.get(
-  "/api/jobs/:id",
-  (req, res) => {
-    const job =
-      jobs.get(
-        req.params.id
-      );
-
-    if (!job) {
-      return res
-        .status(404)
-        .json({
-          ok: false,
-
-          error:
-            "Job not found."
-        });
-    }
-
-    res.json({
-      ok: true,
-
-      job
-    });
+  if (
+    !selected.length
+  ) {
+    selected.push(
+      normalized[0]
+    );
   }
-);
 
+  return selected.sort(
+    (a, b) =>
+      a.start -
+      b.start
+  );
+}
 
 /* =====================================================
-   PROCESS VIDEO
+   STANDARD RENDER
 ===================================================== */
 
-app.post(
-  "/api/process-video",
-  upload.single("video"),
+function buildTrimArgs(
+  inputFile,
+  outputFile,
+  duration,
+  aspectRatio,
+  resolution
+) {
+  const height =
+    resolution ===
+    "720p"
+      ? 720
+      : 1080;
 
-  async (
-    req,
-    res
-  ) => {
-    let inputFile =
-      null;
+  const filter =
+    `${getVideoFilter(
+      aspectRatio
+    )},scale=-2:${height}`;
 
-    let outputFile =
-      null;
+  return [
+    "-y",
 
-    try {
-      if (
-        !req.file
-      ) {
-        return res
-          .status(400)
-          .json({
-            ok: false,
+    "-hide_banner",
 
-            error:
-              "No video file uploaded."
-          });
-      }
+    "-i",
+    inputFile,
 
-      inputFile =
-        req.file.path;
+    "-t",
+    String(
+      duration
+    ),
 
-      const requestedDuration =
-        Math.max(
-          1,
+    "-map",
+    "0:v:0",
 
-          Number(
-            req.body
-              .durationSeconds ||
-              req.body.duration ||
-              30
-          )
-        );
+    "-map",
+    "0:a:0?",
 
-      const aspectRatio =
-        req.body
-          .aspectRatio ||
-        "9:16";
+    "-vf",
+    filter,
 
-      const resolution =
-        req.body
-          .resolution ||
-        "1080p";
+    "-sn",
 
-      const sourceDuration =
-        await getVideoDuration(
-          inputFile
-        );
+    "-dn",
 
-      const finalDuration =
-        Math.min(
-          requestedDuration,
-          sourceDuration
-        );
+    "-c:v",
+    "libx264",
 
-      const height =
-        resolution ===
-        "720p"
-          ? 720
-          : 1080;
+    "-preset",
+    "veryfast",
 
-      const filter =
-        getVideoFilter(
-          aspectRatio
-        );
+    "-crf",
+    "23",
 
-      const id =
-        Date.now() +
-        "-" +
-        crypto
-          .randomBytes(5)
-          .toString("hex");
+    "-pix_fmt",
+    "yuv420p",
 
-      outputFile =
+    "-c:a",
+    "aac",
+
+    "-b:a",
+    "128k",
+
+    "-movflags",
+    "+faststart",
+
+    outputFile
+  ];
+}
+
+/* =====================================================
+   REAL BEST-SCENE RENDER
+===================================================== */
+
+async function renderBestScenes({
+  inputFile,
+  outputFile,
+  scenes,
+  aspectRatio,
+  resolution,
+  targetDuration
+}) {
+  if (
+    !scenes.length
+  ) {
+    throw new Error(
+      "No usable best scenes were returned by Gemini."
+    );
+  }
+
+  const clipFiles =
+    [];
+
+  let concatFile =
+    null;
+
+  try {
+    for (
+      let i = 0;
+      i <
+      scenes.length;
+      i++
+    ) {
+      const scene =
+        scenes[i];
+
+      const clipFile =
         path.join(
-          OUTPUT_DIR,
-          `${id}.mp4`
+          TEMP_DIR,
+          `${Date.now()}-${crypto.randomBytes(5).toString("hex")}-${i}.mp4`
         );
 
-      const scaleFilter =
-        `${filter},scale=-2:${height}`;
+      const duration =
+        Math.max(
+          0.25,
+          scene.end -
+            scene.start
+        );
 
-      const args = [
+      await runCommand(
+        ffmpegPath,
+        [
+          "-y",
+
+          "-hide_banner",
+
+          "-ss",
+          String(
+            scene.start
+          ),
+
+          "-i",
+          inputFile,
+
+          "-t",
+          String(
+            duration
+          ),
+
+          "-map",
+          "0:v:0",
+
+          "-map",
+          "0:a:0?",
+
+          "-c",
+          "copy",
+
+          "-avoid_negative_ts",
+          "make_zero",
+
+          clipFile
+        ]
+      );
+
+      if (
+        fs.existsSync(
+          clipFile
+        ) &&
+        fs.statSync(
+          clipFile
+        ).size >
+          0
+      ) {
+        clipFiles.push(
+          clipFile
+        );
+      }
+    }
+
+    if (
+      !clipFiles.length
+    ) {
+      throw new Error(
+        "FFmpeg could not create selected scene clips."
+      );
+    }
+
+    concatFile =
+      path.join(
+        TEMP_DIR,
+        `${Date.now()}-${crypto.randomBytes(5).toString("hex")}-concat.txt`
+      );
+
+    fs.writeFileSync(
+      concatFile,
+      clipFiles
+        .map(
+          (file) =>
+            `file '${file.replace(
+              /'/g,
+              "'\\''"
+            )}'`
+        )
+        .join(
+          "\n"
+        ),
+      "utf8"
+    );
+
+    const height =
+      resolution ===
+      "720p"
+        ? 720
+        : 1080;
+
+    const filter =
+      `${getVideoFilter(
+        aspectRatio
+      )},scale=-2:${height}`;
+
+    await runCommand(
+      ffmpegPath,
+      [
         "-y",
 
         "-hide_banner",
 
+        "-f",
+        "concat",
+
+        "-safe",
+        "0",
+
         "-i",
-        inputFile,
+        concatFile,
 
         "-t",
         String(
-          finalDuration
+          targetDuration
         ),
 
         "-map",
@@ -1607,7 +1910,7 @@ app.post(
         "0:a:0?",
 
         "-vf",
-        scaleFilter,
+        filter,
 
         "-sn",
 
@@ -1635,12 +1938,637 @@ app.post(
         "+faststart",
 
         outputFile
-      ];
+      ]
+    );
+  } finally {
+    for (
+      const file of
+        clipFiles
+    ) {
+      try {
+        fs.unlinkSync(
+          file
+        );
+      } catch {}
+    }
 
-      await runCommand(
-        ffmpegPath,
-        args
+    if (
+      concatFile &&
+      fs.existsSync(
+        concatFile
+      )
+    ) {
+      try {
+        fs.unlinkSync(
+          concatFile
+        );
+      } catch {}
+    }
+  }
+}
+
+/* =====================================================
+   HOME
+===================================================== */
+
+app.get(
+  "/",
+  (_req, res) => {
+    res.json({
+      ok: true,
+
+      service:
+        "SUN SPY RECAP V2",
+
+      version:
+        "4.1.0",
+
+      message:
+        "Backend is online.",
+
+      ffmpeg:
+        Boolean(
+          ffmpegPath
+        ),
+
+      geminiConfigured:
+        Boolean(
+          GEMINI_API_KEY
+        ),
+
+      model:
+        GEMINI_MODEL,
+
+      fallbackModel:
+        GEMINI_FALLBACK_MODEL,
+
+      outputServing:
+        true,
+
+      sceneAnalysis:
+        true,
+
+      bestSceneSelection:
+        true,
+
+      jobs:
+        jobs.size
+    });
+  }
+);
+
+/* =====================================================
+   HEALTH
+===================================================== */
+
+app.get(
+  "/api/health",
+  (_req, res) => {
+    res.json({
+      ok: true,
+
+      service:
+        "SUN SPY RECAP V2",
+
+      version:
+        "4.1.0",
+
+      message:
+        "Backend is online.",
+
+      ffmpeg:
+        Boolean(
+          ffmpegPath
+        ),
+
+      geminiConfigured:
+        Boolean(
+          GEMINI_API_KEY
+        ),
+
+      model:
+        GEMINI_MODEL,
+
+      fallbackModel:
+        GEMINI_FALLBACK_MODEL,
+
+      outputServing:
+        true,
+
+      sceneAnalysis:
+        true,
+
+      bestSceneSelection:
+        true,
+
+      jobs:
+        jobs.size
+    });
+  }
+);
+
+/* =====================================================
+   CREATE RECAP JOB
+===================================================== */
+
+app.post(
+  "/api/recap",
+  upload.single(
+    "video"
+  ),
+
+  async (
+    req,
+    res
+  ) => {
+    try {
+      if (
+        !GEMINI_API_KEY
+      ) {
+        return res
+          .status(
+            500
+          )
+          .json({
+            ok: false,
+
+            error:
+              "GEMINI_API_KEY is not configured on the server."
+          });
+      }
+
+      if (
+        !req.file
+      ) {
+        return res
+          .status(
+            400
+          )
+          .json({
+            ok: false,
+
+            error:
+              "No video file uploaded."
+          });
+      }
+
+      const durationSeconds =
+        Math.max(
+          5,
+
+          Number(
+            firstValue(
+              req.body,
+
+              [
+                "durationSeconds",
+                "duration",
+                "targetDuration"
+              ],
+
+              30
+            )
+          )
+        );
+
+      const language =
+        firstValue(
+          req.body,
+
+          [
+            "language",
+            "outputLanguage"
+          ],
+
+          "Burmese"
+        );
+
+      const style =
+        firstValue(
+          req.body,
+
+          [
+            "style",
+            "voiceStyle"
+          ],
+
+          "Cinematic Story"
+        );
+
+      const instructions =
+        firstValue(
+          req.body,
+
+          [
+            "instructions",
+            "prompt",
+            "customPrompt"
+          ],
+
+          ""
+        );
+
+      const sceneAnalysisEnabled =
+        boolValue(
+          firstValue(
+            req.body,
+
+            [
+              "sceneAnalysis",
+              "sceneAnalysisEnabled",
+              "geminiSceneAnalysis",
+              "geminiAnalysis",
+              "enableSceneAnalysis"
+            ],
+
+            true
+          ),
+
+          true
+        );
+
+      const bestScenesEnabled =
+        boolValue(
+          firstValue(
+            req.body,
+
+            [
+              "bestScenes",
+              "bestScenesEnabled",
+              "bestSceneSelection",
+              "enableBestScenes"
+            ],
+
+            true
+          ),
+
+          true
+        );
+
+      const recapEnabled =
+        boolValue(
+          firstValue(
+            req.body,
+
+            [
+              "recap",
+              "recapEnabled",
+              "aiRecap",
+              "enableRecap"
+            ],
+
+            true
+          ),
+
+          true
+        );
+
+      const job =
+        createJob();
+
+      processRecapJob(
+        job,
+
+        {
+          filePath:
+            req.file.path,
+
+          mimeType:
+            req.file.mimetype ||
+            "video/mp4",
+
+          language,
+
+          style,
+
+          instructions,
+
+          durationSeconds,
+
+          sceneAnalysisEnabled,
+
+          bestScenesEnabled,
+
+          recapEnabled
+        }
       );
+
+      return res.json({
+        ok: true,
+
+        success:
+          true,
+
+        jobId:
+          job.id,
+
+        status:
+          job.status,
+
+        message:
+          "Recap job started.",
+
+        settings: {
+          sceneAnalysisEnabled,
+
+          bestScenesEnabled,
+
+          recapEnabled
+        }
+      });
+    } catch (
+      error
+    ) {
+      console.error(
+        "CREATE RECAP ERROR:",
+        error
+      );
+
+      return res
+        .status(
+          500
+        )
+        .json({
+          ok: false,
+
+          error:
+            error.message ||
+            "Could not create recap job."
+        });
+    }
+  }
+);
+
+/* =====================================================
+   JOB STATUS
+===================================================== */
+
+app.get(
+  "/api/jobs/:id",
+  (
+    req,
+    res
+  ) => {
+    const job =
+      jobs.get(
+        req.params.id
+      );
+
+    if (!job) {
+      return res
+        .status(
+          404
+        )
+        .json({
+          ok: false,
+
+          error:
+            "Job not found."
+        });
+    }
+
+    res.json({
+      ok: true,
+
+      job
+    });
+  }
+);
+
+/* =====================================================
+   PROCESS VIDEO
+===================================================== */
+
+app.post(
+  "/api/process-video",
+  upload.single(
+    "video"
+  ),
+
+  async (
+    req,
+    res
+  ) => {
+    let inputFile =
+      null;
+
+    let outputFile =
+      null;
+
+    try {
+      if (
+        !req.file
+      ) {
+        return res
+          .status(
+            400
+          )
+          .json({
+            ok: false,
+
+            error:
+              "No video file uploaded."
+          });
+      }
+
+      inputFile =
+        req.file.path;
+
+      const requestedDuration =
+        Math.max(
+          1,
+
+          Number(
+            firstValue(
+              req.body,
+
+              [
+                "durationSeconds",
+                "duration",
+                "targetDuration"
+              ],
+
+              30
+            )
+          )
+        );
+
+      const aspectRatio =
+        firstValue(
+          req.body,
+          ["aspectRatio"],
+          "9:16"
+        );
+
+      const resolution =
+        firstValue(
+          req.body,
+          ["resolution"],
+          "1080p"
+        );
+
+      const sceneAnalysisEnabled =
+        boolValue(
+          firstValue(
+            req.body,
+
+            [
+              "sceneAnalysis",
+              "sceneAnalysisEnabled",
+              "geminiSceneAnalysis",
+              "geminiAnalysis",
+              "enableSceneAnalysis"
+            ],
+
+            false
+          ),
+
+          false
+        );
+
+      const bestScenesEnabled =
+        boolValue(
+          firstValue(
+            req.body,
+
+            [
+              "bestScenes",
+              "bestScenesEnabled",
+              "bestSceneSelection",
+              "enableBestScenes"
+            ],
+
+            false
+          ),
+
+          false
+        );
+
+      const recapData =
+        parseJsonMaybe(
+          firstValue(
+            req.body,
+
+            [
+              "recap",
+              "recapData",
+              "aiRecap",
+              "geminiResult"
+            ],
+
+            null
+          ),
+
+          null
+        );
+
+      const sourceDuration =
+        await getVideoDuration(
+          inputFile
+        );
+
+      const finalDuration =
+        Math.min(
+          requestedDuration,
+          sourceDuration
+        );
+
+      const id =
+        Date.now() +
+        "-" +
+        crypto
+          .randomBytes(
+            5
+          )
+          .toString(
+            "hex"
+          );
+
+      outputFile =
+        path.join(
+          OUTPUT_DIR,
+
+          `${id}.mp4`
+        );
+
+      let selectedScenes =
+        [];
+
+      /*
+       * BEST SCENE MODE
+       */
+
+      if (
+        sceneAnalysisEnabled &&
+        bestScenesEnabled &&
+        recapData
+      ) {
+        const rawBest =
+          Array.isArray(
+            recapData.bestScenes
+          )
+            ? recapData.bestScenes
+            : Array.isArray(
+                recapData.scenes
+              )
+            ? recapData.scenes
+            : [];
+
+        selectedScenes =
+          selectBestScenes(
+            rawBest,
+
+            finalDuration,
+
+            sourceDuration
+          );
+      }
+
+      /*
+       * REAL BEST SCENE RENDER
+       */
+
+      if (
+        sceneAnalysisEnabled &&
+        bestScenesEnabled &&
+        selectedScenes.length
+      ) {
+        await renderBestScenes({
+          inputFile,
+
+          outputFile,
+
+          scenes:
+            selectedScenes,
+
+          aspectRatio,
+
+          resolution,
+
+          targetDuration:
+            finalDuration
+        });
+      } else {
+        /*
+         * STANDARD MODE
+         */
+
+        await runCommand(
+          ffmpegPath,
+
+          buildTrimArgs(
+            inputFile,
+
+            outputFile,
+
+            finalDuration,
+
+            aspectRatio,
+
+            resolution
+          )
+        );
+      }
 
       if (
         !fs.existsSync(
@@ -1658,206 +2586,4 @@ app.post(
         );
 
       if (
-        stat.size <= 0
-      ) {
-        throw new Error(
-          "FFmpeg created an empty file."
-        );
-      }
-
-      const baseUrl =
-        getPublicBaseUrl(
-          req
-        );
-
-      const outputUrl =
-        `${baseUrl}/outputs/${encodeURIComponent(
-          path.basename(
-            outputFile
-          )
-        )}`;
-
-      return res.json({
-        ok: true,
-
-        success: true,
-
-        outputUrl,
-
-        videoUrl:
-          outputUrl,
-
-        url:
-          outputUrl,
-
-        file:
-          outputUrl,
-
-        duration:
-          finalDuration,
-
-        durationSeconds:
-          finalDuration,
-
-        aspectRatio,
-
-        resolution
-      });
-
-    } catch (error) {
-      console.error(
-        "PROCESS VIDEO ERROR:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          ok: false,
-
-          success: false,
-
-          error:
-            error.message ||
-            "Video processing failed.",
-
-          details:
-            error.stderr
-              ? error.stderr.slice(
-                  -5000
-                )
-              : undefined
-        });
-
-    } finally {
-      if (
-        inputFile &&
-        fs.existsSync(
-          inputFile
-        )
-      ) {
-        try {
-          fs.unlinkSync(
-            inputFile
-          );
-        } catch {}
-      }
-    }
-  }
-);
-
-
-/* =====================================================
-   CLEAN OLD JOBS
-===================================================== */
-
-setInterval(
-  () => {
-    const now =
-      Date.now();
-
-    for (
-      const [
-        id,
-        job
-      ] of jobs
-    ) {
-      if (
-        now -
-          job.updatedAt >
-        60 * 60 * 1000
-      ) {
-        jobs.delete(
-          id
-        );
-      }
-    }
-  },
-
-  10 * 60 * 1000
-);
-
-
-/* =====================================================
-   GLOBAL ERROR
-===================================================== */
-
-app.use(
-  (
-    error,
-    _req,
-    res,
-    _next
-  ) => {
-    console.error(
-      "GLOBAL ERROR:",
-      error
-    );
-
-    res
-      .status(500)
-      .json({
-        ok: false,
-
-        error:
-          error.message ||
-          "Internal server error."
-      });
-  }
-);
-
-
-/* =====================================================
-   START
-===================================================== */
-
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-    console.log(
-      "========================================"
-    );
-
-    console.log(
-      "SUN SPY RECAP V2"
-    );
-
-    console.log(
-      "Backend version: 4.0.0"
-    );
-
-    console.log(
-      "Port:",
-      PORT
-    );
-
-    console.log(
-      "Gemini:",
-      GEMINI_API_KEY
-        ? "CONFIGURED"
-        : "NOT CONFIGURED"
-    );
-
-    console.log(
-      "Primary model:",
-      GEMINI_MODEL
-    );
-
-    console.log(
-      "Fallback model:",
-      GEMINI_FALLBACK_MODEL
-    );
-
-    console.log(
-      "FFmpeg:",
-      ffmpegPath
-        ? "AVAILABLE"
-        : "NOT AVAILABLE"
-    );
-
-    console.log(
-      "========================================"
-    );
-  }
-);
+        stat.size <=
